@@ -110,7 +110,13 @@ export default function App(){
 
   const connectedCount = apis.filter(a=>a.connected).length;
   const avgLatency = useMemo(()=>{
-    const a=apis.filter(x=>x.connected && x.latency_ms>0); return a.length?Math.round(a.reduce((s,x)=>s+x.latency_ms,0)/a.length):0;
+    const values = apis
+      .filter(x=>x.connected && x.latency_ms>0)
+      .map(x=>Number(x.latency_ms))
+      .sort((a,b)=>a-b);
+    if(!values.length) return 0;
+    const mid=Math.floor(values.length/2);
+    return values.length%2 ? values[mid] : Math.round((values[mid-1]+values[mid])/2);
   },[apis]);
 
   useEffect(()=>{
@@ -146,27 +152,34 @@ export default function App(){
           addBootCheck('Serveur overlay OBS', false, String(e));
         }
 
-        setBootStatus('Vérification de la base Yu-Gi-Oh!…');
+        setBootStatus('Vérification des banques de données…');
         setBootProgress(38);
-        const ygo = await invoke('api_status',{game:'ygo',apiUrl:null,apiKey:null})
-          .catch(e=>({id:'ygo',name:'YGOPRODeck',connected:false,detail:String(e)}));
-        addBootCheck('Base Yu-Gi-Oh! / YGOPRODeck', !!ygo.connected, ygo.detail || (ygo.count != null ? `${ygo.count} cartes` : ''));
-
-        setBootStatus('Vérification de la base Pokémon TCG…');
-        setBootProgress(55);
-        const pokemon = await invoke('api_status',{game:'pokemon',apiUrl:null,apiKey:null})
-          .catch(e=>({id:'pokemon',name:'Pokémon TCG',connected:false,detail:String(e)}));
-        addBootCheck('Base Pokémon TCG', !!pokemon.connected, pokemon.detail || (pokemon.count != null ? `${pokemon.count} cartes` : ''));
-
-        setBootStatus('Vérification de l’API One Piece…');
-        setBootProgress(70);
         const opUrl=localStorage.getItem('onepiece_url')||'';
         const opKey=localStorage.getItem('onepiece_key')||'';
-        const onepiece = await invoke('api_status',{game:'onepiece',apiUrl:opUrl||null,apiKey:opKey||null})
-          .catch(e=>({id:'onepiece',name:'One Piece',connected:false,detail:String(e)}));
-        addBootCheck('API One Piece', !!onepiece.connected, onepiece.detail || (onepiece.count != null ? `${onepiece.count} cartes` : 'Non configurée'));
-
-        if(mounted) setApis([ygo,pokemon,onepiece]);
+        const startupDefs=[
+          ['ygo','YGOPRODeck',null,null],
+          ['pokemon','Pokémon TCG',null,null],
+          ['onepiece','One Piece',opUrl||null,opKey||null],
+          ['magic','Magic / Scryfall',null,null],
+          ['vanguard','Cardfight!! Vanguard',null,null]
+        ];
+        const startupResults=[];
+        for(let i=0;i<startupDefs.length;i++){
+          const [game,name,apiUrl,apiKey]=startupDefs[i];
+          setBootStatus(`Vérification : ${name}…`);
+          setBootProgress(38 + Math.round((i/startupDefs.length)*42));
+          const result=await invoke('api_status',{game,apiUrl,apiKey})
+            .catch(e=>({id:game,name,connected:false,count:null,latency_ms:0,detail:String(e)}));
+          startupResults.push(result);
+          addBootCheck(
+            name,
+            !!result.connected,
+            result.connected
+              ? (result.count != null ? `${fmtCount(result.count)} cartes` : (result.detail || 'Connecté'))
+              : (result.detail || 'Indisponible')
+          );
+        }
+        if(mounted) setApis(startupResults);
 
         setBootStatus('Vérification des mises à jour…');
         setBootProgress(85);
@@ -556,7 +569,7 @@ export default function App(){
         <div className="panel">
           <div className="panel-title">▰ {tr.sources}</div>
           {apis.map(a=><div className="source-row" key={a.id}><span><i className={a.connected?'dot ok':'dot'}></i>{a.name}</span><b>{a.connected?fmtCount(a.count):'OFF'}</b></div>)}
-          <div className="source-row sep"><span>{tr.latency}</span><b>~{avgLatency || '—'} ms</b></div>
+          <div className="source-row sep"><span>{tr.latency} API</span><b>~{avgLatency || '—'} ms</b></div>
           <button className="ghost full" onClick={refreshApis}>{tr.refresh}</button>
         </div>
       </section>
@@ -589,7 +602,7 @@ export default function App(){
       <section className="rightcol">
         <div className="panel">
           <div className="panel-title">◉ STREAM STATS</div>
-          <div className="statgrid"><div><strong>{avgLatency||'—'}<small>ms</small></strong><span>{tr.latency}</span></div><div><strong>{camFps||'—'}</strong><span>{tr.fps}</span></div></div>
+          <div className="statgrid"><div><strong>{avgLatency||'—'}<small>ms</small></strong><span>{tr.latency} API</span></div><div><strong>{camFps||'—'}</strong><span>{tr.fps}</span></div></div>
           <div className="api-badge"><i className="dot ok"></i>{tr.api} • {connectedCount}/{apis.length || 5}</div>
         </div>
         <div className="panel overlay-box">
