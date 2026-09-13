@@ -1,1 +1,75 @@
-CHARTE LEGALE © 2026 Reddice Geek - Reproduction interdite Art L335-2
+
+LICENCE UTILISATEUR FINAL (EULA) - TCG STREAM TOOL
+Version 1.0.5 - BUILD FIX - 13/09/2026
+© 2026 Reddice Geek - Tous droits réservés
+
+
+1. EDITEUR ET PROPRIETE
+Editeur: Reddice Geek (2026)
+GitHub: reddice-geek/tcg-stream-tool
+Email: reddice.geek@gmail.com
+Le logiciel TCG STREAM TOOL, son code source Rust/React, son design
+Space Grotesk + cyan #00E5FF, son logo TCG, ses thèmes (Duel Disk Or,
+Wanted, Pokédex), son overlay http://localhost:8765/overlay, sont la
+propriété exclusive de Reddice Geek. Dépôt APP/INPI 2026.
+
+2. OBJET DE LA LICENCE
+Le présent contrat vous accorde un droit d'utilisation personnel,
+non exclusif, non transférable, pour le logiciel TCG STREAM TOOL
+permettant de streamer 12 TCGs : YGO, Pokémon, One Piece, Magic,
+Dragon Ball, Vanguard, Digimon, Lorcana, SWU, Riftbound, Naruto, Mythos.
+
+3. DROITS ACCORDES
+- Installer sur 3 PCs maximum vous appartenant
+- Utiliser l'overlay dans OBS / Streamlabs / XSplit via localhost:8765
+- Détection de cartes via flux caméra
+- Mode discret + enregistrement 720p/1080p/4K/8K
+- Usage streaming perso OU commercial (Twitch/YouTube) autorisé
+- Mises à jour gratuites via GitHub Releases
+
+4. INTERDICTIONS - SOUS PEINE DE POURSUITES
+Il est STRICTEMENT INTERDIT de :
+a) Copier, cloner, dupliquer le logiciel ou l'exe
+b) Partager l'exe, le .deb, l'AppImage, le code sur Discord/Drive/Torrent
+c) Décompiler, reverse-engineer, extraire le code Rust/React
+d) Modifier, cracker la charte légale du NSIS
+e) Revendre, louer, monnayer l'accès
+f) Utiliser "TCG STREAM TOOL", "Reddice Geek", logo TCG cyan sans autorisation
+g) Supprimer le copyright © 2026 Reddice Geek
+
+5. SANCTIONS - Art. L335-2 à L335-10 CPI
+Toute violation = délit de contrefaçon :
+- 3 ans d'emprisonnement
+- 300 000€ d'amende
+- Dommages-intérêts
+- Blocage à distance des versions crackées
+- Poursuite Tribunal Judiciaire Paris
+- Signalement DMCA GitHub
+
+6. DONNEES - RGPD
+Aucune collecte. Le logiciel tourne en local uniquement.
+Aucun tracking, aucun cookie. Requêtes APIs TCG directes depuis votre PC.
+Conforme RGPD.
+
+7. GARANTIE BETA
+Logiciel fourni "en l'état" en BETA v1.0.5. Aucune garantie de fonctionnement
+parfait. Reddice Geek non responsable de crash OBS, perte de stream, etc.
+Support via GitHub Issues uniquement.
+
+8. MISES A JOUR
+Chaque tag v* déclenche build auto via GitHub Actions.
+La présente licence s'applique à toutes versions futures.
+
+9. RESILIATION
+Non-respect = résiliation immédiate + désinstallation obligatoire + poursuites.
+
+10. DROIT APPLICABLE
+Droit français. Tribunal compétent : Paris.
+
+ACCEPTATION DANS L'EXE
+En cochant "J'accepte la charte © 2026 Reddice Geek - Reproduction interdite
+sous peine de poursuites légales" dans l'installeur
+TCG-STREAM-TOOL_1.0.5_x64-setup.exe, vous acceptez l'intégralité de cette licence.
+
+Date d'effet : 13/09/2026
+© 2026 Reddice Geek - Tous droits réservés
