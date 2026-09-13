@@ -29,9 +29,19 @@ jobs:
         shell: powershell
         run: |
           Copy-Item "CHARTE_LEGALE.txt" "src-tauri/CHARTE_LEGALE.txt" -Force
-          if (!(Test-Path "src-tauri/CHARTE_LEGALE.txt")) { throw "CHARTE_LEGALE.txt introuvable" }
-          if (!(Test-Path "src-tauri/icons/icon.ico")) { throw "icon.ico introuvable" }
-          if (!(Test-Path "src-tauri/icons/icon.png")) { throw "icon.png introuvable" }
+
+          if (!(Test-Path "src-tauri/CHARTE_LEGALE.txt")) {
+            throw "CHARTE_LEGALE.txt introuvable"
+          }
+
+          if (!(Test-Path "src-tauri/icons/icon.ico")) {
+            throw "icon.ico introuvable"
+          }
+
+          if (!(Test-Path "src-tauri/icons/icon.png")) {
+            throw "icon.png introuvable"
+          }
+
           Write-Host "Fichiers installateur OK"
 
       - name: Install frontend dependencies
@@ -39,27 +49,63 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Build Windows installer
-        uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: powershell
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Rename Windows installer
+        shell: powershell
+        run: |
+          $version = (Get-Content "src-tauri/tauri.conf.json" | ConvertFrom-Json).version
+
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" |
+            Select-Object -First 1
+
+          if (!$installer) {
+            throw "Installateur NSIS introuvable"
+          }
+
+          $newName = "TCG STREAM TOOL Setup $version.exe"
+          $newPath = Join-Path $installer.DirectoryName $newName
+
+          Rename-Item $installer.FullName $newName -Force
+
+          Write-Host "Installateur renommé : $newPath"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
         with:
-          projectPath: .
-          tauriScript: npm run tauri
-          args: --bundles nsis
-          tagName: v__VERSION__
-          releaseName: "TCG STREAM TOOL v__VERSION__"
-          releaseBody: |
-            Version Windows de TCG STREAM TOOL.
+          name: TCG-STREAM-TOOL-Windows
+          path: |
+            src-tauri/target/release/bundle/nsis/TCG STREAM TOOL Setup *.exe
 
-            - Caméra réelle avec sélection du périphérique
-            - FPS caméra mesurés en direct
-            - État et latence réels des API
-            - YGOPRODeck et Pokémon TCG connectés aux vraies API
-            - One Piece configurable dans les réglages
-            - Recherche réelle de cartes Yu-Gi-Oh! via YGOPRODeck
-            - Overlay local OBS/Streamlabs avec URL dédiée
-            - Installateur multilingue + conditions générales
+      - name: Get version
+        id: version
+        shell: powershell
+        run: |
+          $version = (Get-Content "src-tauri/tauri.conf.json" | ConvertFrom-Json).version
+          echo "version=$version" >> $env:GITHUB_OUTPUT
 
-            Téléchargez le fichier .exe ci-dessous puis lancez l'installation.
-          releaseDraft: false
-          prerelease: false
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "TCG STREAM TOOL v${{ steps.version.outputs.version }}"
+          files: |
+            src-tauri/target/release/bundle/nsis/TCG STREAM TOOL Setup *.exe
+          body: |
+            TCG STREAM TOOL v${{ steps.version.outputs.version }}
+
+            Installateur Windows multilingue.
+
+            Langues :
+            - Français
+            - English
+            - Español
+            - Italiano
+
+            Fonctions principales :
+            - Caméra
+            - Détection de cartes
+            - Overlay OBS
+            - API TCG
+            - Profils streamer
