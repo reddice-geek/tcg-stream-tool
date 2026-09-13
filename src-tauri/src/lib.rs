@@ -129,59 +129,210 @@ fn set_overlay_card(shared: State<'_, OverlayShared>, card: OverlayCard) -> Resu
 #[tauri::command]
 async fn api_status(game: String, api_url: Option<String>, api_key: Option<String>) -> ApiStatus {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(12))
         .user_agent("TCG-STREAM-TOOL/1.0.9")
         .build()
         .unwrap_or_default();
+
     let start = Instant::now();
+
+    async fn send_json(
+        client: &reqwest::Client,
+        url: &str,
+        api_key: Option<String>,
+    ) -> Result<(reqwest::StatusCode, Value), String> {
+        let mut req = client.get(url);
+        if let Some(key) = api_key.filter(|s| !s.trim().is_empty()) {
+            req = req.header("X-API-Key", key);
+        }
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        let status = resp.status();
+        let json = resp.json::<Value>().await.unwrap_or(Value::Null);
+        Ok((status, json))
+    }
 
     match game.as_str() {
         "ygo" => {
             let url = "https://db.ygoprodeck.com/api/v7/cardinfo.php?num=1&offset=0";
-            match client.get(url).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    let latency = start.elapsed().as_millis();
-                    let json: Value = resp.json().await.unwrap_or(Value::Null);
+            match send_json(&client, url, None).await {
+                Ok((status, json)) if status.is_success() => {
                     let count = json.pointer("/meta/total_rows").and_then(Value::as_u64);
-                    ApiStatus { id: "ygo".into(), name: "YGOPRODeck".into(), connected: true, latency_ms: latency, count, detail: "API v7".into() }
+                    ApiStatus {
+                        id: "ygo".into(),
+                        name: "YGOPRODeck".into(),
+                        connected: true,
+                        latency_ms: start.elapsed().as_millis(),
+                        count,
+                        detail: "YGOPRODeck API v7".into(),
+                    }
                 }
-                Ok(resp) => ApiStatus { id: "ygo".into(), name: "YGOPRODeck".into(), connected: false, latency_ms: start.elapsed().as_millis(), count: None, detail: format!("HTTP {}", resp.status()) },
-                Err(e) => ApiStatus { id: "ygo".into(), name: "YGOPRODeck".into(), connected: false, latency_ms: start.elapsed().as_millis(), count: None, detail: e.to_string() },
+                Ok((status, _)) => ApiStatus {
+                    id: "ygo".into(),
+                    name: "YGOPRODeck".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: format!("HTTP {}", status),
+                },
+                Err(e) => ApiStatus {
+                    id: "ygo".into(),
+                    name: "YGOPRODeck".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: e,
+                },
             }
         }
+
         "pokemon" => {
             let url = "https://api.pokemontcg.io/v2/cards?page=1&pageSize=1";
-            match client.get(url).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    let latency = start.elapsed().as_millis();
-                    let json: Value = resp.json().await.unwrap_or(Value::Null);
+            match send_json(&client, url, None).await {
+                Ok((status, json)) if status.is_success() => {
                     let count = json.get("totalCount").and_then(Value::as_u64);
-                    ApiStatus { id: "pokemon".into(), name: "Pokémon TCG".into(), connected: true, latency_ms: latency, count, detail: "Pokémon TCG API".into() }
+                    ApiStatus {
+                        id: "pokemon".into(),
+                        name: "Pokémon TCG".into(),
+                        connected: true,
+                        latency_ms: start.elapsed().as_millis(),
+                        count,
+                        detail: "Pokémon TCG API".into(),
+                    }
                 }
-                Ok(resp) => ApiStatus { id: "pokemon".into(), name: "Pokémon TCG".into(), connected: false, latency_ms: start.elapsed().as_millis(), count: None, detail: format!("HTTP {}", resp.status()) },
-                Err(e) => ApiStatus { id: "pokemon".into(), name: "Pokémon TCG".into(), connected: false, latency_ms: start.elapsed().as_millis(), count: None, detail: e.to_string() },
+                Ok((status, _)) => ApiStatus {
+                    id: "pokemon".into(),
+                    name: "Pokémon TCG".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: format!("HTTP {}", status),
+                },
+                Err(e) => ApiStatus {
+                    id: "pokemon".into(),
+                    name: "Pokémon TCG".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: e,
+                },
             }
         }
+
         "onepiece" => {
-            let Some(url) = api_url.filter(|s| !s.trim().is_empty()) else {
-                return ApiStatus { id: "onepiece".into(), name: "One Piece".into(), connected: false, latency_ms: 0, count: None, detail: "Configurez l’URL/API key dans Réglages".into() };
-            };
-            let mut request = client.get(url);
-            if let Some(key) = api_key.filter(|s| !s.trim().is_empty()) {
-                request = request.header("X-API-Key", key);
-            }
-            match request.send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    let latency = start.elapsed().as_millis();
-                    let json: Value = resp.json().await.unwrap_or(Value::Null);
-                    let count = json.pointer("/meta/total").or_else(|| json.get("total")).or_else(|| json.get("totalCount")).and_then(Value::as_u64);
-                    ApiStatus { id: "onepiece".into(), name: "One Piece".into(), connected: true, latency_ms: latency, count, detail: "API personnalisée".into() }
+            let url = api_url
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "https://optcgapi.com/api/allSets/".into());
+
+            match send_json(&client, &url, api_key).await {
+                Ok((status, json)) if status.is_success() => {
+                    let count = json.as_array().map(|a| a.len() as u64)
+                        .or_else(|| json.get("count").and_then(Value::as_u64))
+                        .or_else(|| json.get("total").and_then(Value::as_u64))
+                        .or_else(|| json.get("totalCount").and_then(Value::as_u64));
+
+                    ApiStatus {
+                        id: "onepiece".into(),
+                        name: "One Piece".into(),
+                        connected: true,
+                        latency_ms: start.elapsed().as_millis(),
+                        count,
+                        detail: if api_url.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+                            "API personnalisée".into()
+                        } else {
+                            "OPTCG API".into()
+                        },
+                    }
                 }
-                Ok(resp) => ApiStatus { id: "onepiece".into(), name: "One Piece".into(), connected: false, latency_ms: start.elapsed().as_millis(), count: None, detail: format!("HTTP {}", resp.status()) },
-                Err(e) => ApiStatus { id: "onepiece".into(), name: "One Piece".into(), connected: false, latency_ms: start.elapsed().as_millis(), count: None, detail: e.to_string() },
+                Ok((status, _)) => ApiStatus {
+                    id: "onepiece".into(),
+                    name: "One Piece".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: format!("HTTP {}", status),
+                },
+                Err(e) => ApiStatus {
+                    id: "onepiece".into(),
+                    name: "One Piece".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: e,
+                },
             }
         }
-        _ => ApiStatus { id: game, name: "API".into(), connected: false, latency_ms: 0, count: None, detail: "Source inconnue".into() },
+
+        "magic" => {
+            let url = "https://api.scryfall.com/cards/search?q=%2A";
+            match send_json(&client, url, None).await {
+                Ok((status, json)) if status.is_success() => {
+                    let count = json.get("total_cards").and_then(Value::as_u64);
+                    ApiStatus {
+                        id: "magic".into(),
+                        name: "Magic / Scryfall".into(),
+                        connected: true,
+                        latency_ms: start.elapsed().as_millis(),
+                        count,
+                        detail: "Scryfall API".into(),
+                    }
+                }
+                Ok((status, _)) => ApiStatus {
+                    id: "magic".into(),
+                    name: "Magic / Scryfall".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: format!("HTTP {}", status),
+                },
+                Err(e) => ApiStatus {
+                    id: "magic".into(),
+                    name: "Magic / Scryfall".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: e,
+                },
+            }
+        }
+
+        "vanguard" => {
+            let url = "https://en.cf-vanguard.com/cardlist/cardsearch/";
+            match client.get(url).send().await {
+                Ok(resp) if resp.status().is_success() => ApiStatus {
+                    id: "vanguard".into(),
+                    name: "Cardfight!! Vanguard".into(),
+                    connected: true,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: "Cardlist officielle connectée".into(),
+                },
+                Ok(resp) => ApiStatus {
+                    id: "vanguard".into(),
+                    name: "Cardfight!! Vanguard".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: format!("HTTP {}", resp.status()),
+                },
+                Err(e) => ApiStatus {
+                    id: "vanguard".into(),
+                    name: "Cardfight!! Vanguard".into(),
+                    connected: false,
+                    latency_ms: start.elapsed().as_millis(),
+                    count: None,
+                    detail: e.to_string(),
+                },
+            }
+        }
+
+        _ => ApiStatus {
+            id: game,
+            name: "API".into(),
+            connected: false,
+            latency_ms: 0,
+            count: None,
+            detail: "Source inconnue".into(),
+        },
     }
 }
 
