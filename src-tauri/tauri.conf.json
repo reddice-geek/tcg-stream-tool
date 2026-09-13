@@ -32,14 +32,28 @@
     "targets": [
       "nsis"
     ],
+
+    "licenseFile": "../CHARTE_LEGALE.txt",
+
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"
     ],
+
     "copyright": "© 2026 Reddice Geek",
+
     "windows": {
       "nsis": {
-        "installerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico",
+
+        "languages": [
+          "French",
+          "English",
+          "Spanish",
+          "Italian"
+        ],
+
+        "displayLanguageSelector": true
       }
     }
   }
