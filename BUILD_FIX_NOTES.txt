@@ -1,8 +1,0 @@
-Corrections GitHub Actions :
-- Node.js 24 au lieu de Node.js 20.
-- tauri-apps/tauri-action@v1 au lieu de @v0.
-- Dépendances Ubuntu Tauri v2 : libwebkit2gtk-4.1-dev + xdg-utils.
-- Permissions contents: write pour créer/mettre à jour la Release.
-- Version de Release dynamique avec v__VERSION__ au lieu de v1.0.1 en dur.
-
-Le projet d'origine ne contenait pas de dossier .github/workflows dans le ZIP fourni.
