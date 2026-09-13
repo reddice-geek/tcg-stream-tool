@@ -1,12 +1,11 @@
 {
   "name": "tcg-stream-tool",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
     "tauri": "tauri"
   },
   "dependencies": {

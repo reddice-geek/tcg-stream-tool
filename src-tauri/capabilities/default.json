@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capabilities",
+  "description": "Default",
   "windows": [
     "main"
   ],
