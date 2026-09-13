@@ -186,17 +186,18 @@ async fn api_status(game: String, api_url: Option<String>, api_key: Option<Strin
         }
 
         "pokemon" => {
-            let url = "https://api.pokemontcg.io/v2/cards?page=1&pageSize=1";
+            // TCGdex v2: endpoint public et stable, sans clé API.
+            let url = "https://api.tcgdex.net/v2/fr/cards";
             match send_json(&client, url, None).await {
                 Ok((status, json)) if status.is_success() => {
-                    let count = json.get("totalCount").and_then(Value::as_u64);
+                    let count = json.as_array().map(|a| a.len() as u64);
                     ApiStatus {
                         id: "pokemon".into(),
                         name: "Pokémon TCG".into(),
                         connected: true,
                         latency_ms: start.elapsed().as_millis(),
                         count,
-                        detail: "Pokémon TCG API".into(),
+                        detail: "TCGdex Pokémon API v2".into(),
                     }
                 }
                 Ok((status, _)) => ApiStatus {
@@ -205,7 +206,7 @@ async fn api_status(game: String, api_url: Option<String>, api_key: Option<Strin
                     connected: false,
                     latency_ms: start.elapsed().as_millis(),
                     count: None,
-                    detail: format!("HTTP {}", status),
+                    detail: format!("TCGdex HTTP {}", status),
                 },
                 Err(e) => ApiStatus {
                     id: "pokemon".into(),
@@ -219,47 +220,44 @@ async fn api_status(game: String, api_url: Option<String>, api_key: Option<Strin
         }
 
         "onepiece" => {
-            let url = api_url
-                .as_deref()
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or("https://optcgapi.com/api/allSets/");
-
-            match send_json(&client, &url, api_key).await {
-                Ok((status, json)) if status.is_success() => {
-                    let count = json.as_array().map(|a| a.len() as u64)
-                        .or_else(|| json.get("count").and_then(Value::as_u64))
-                        .or_else(|| json.get("total").and_then(Value::as_u64))
-                        .or_else(|| json.get("totalCount").and_then(Value::as_u64));
-
-                    ApiStatus {
-                        id: "onepiece".into(),
-                        name: "One Piece".into(),
-                        connected: true,
-                        latency_ms: start.elapsed().as_millis(),
-                        count,
-                        detail: if api_url.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
-                            "API personnalisée".into()
-                        } else {
-                            "OPTCG API".into()
-                        },
+            // Une URL personnalisée continue d'être supportée. Sans URL, on compte
+            // les cartes de sets, starters et promos au lieu de compter les sets.
+            if let Some(custom_url) = api_url.as_deref().filter(|s| !s.trim().is_empty()) {
+                match send_json(&client, custom_url, api_key).await {
+                    Ok((status, json)) if status.is_success() => {
+                        let count = json.as_array().map(|a| a.len() as u64)
+                            .or_else(|| json.get("count").and_then(Value::as_u64))
+                            .or_else(|| json.get("total").and_then(Value::as_u64))
+                            .or_else(|| json.get("totalCount").and_then(Value::as_u64));
+                        ApiStatus { id:"onepiece".into(), name:"One Piece".into(), connected:true, latency_ms:start.elapsed().as_millis(), count, detail:"API personnalisée".into() }
+                    }
+                    Ok((status, _)) => ApiStatus { id:"onepiece".into(), name:"One Piece".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("HTTP {}", status) },
+                    Err(e) => ApiStatus { id:"onepiece".into(), name:"One Piece".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
+                }
+            } else {
+                let endpoints = [
+                    "https://optcgapi.com/api/allSetCards/",
+                    "https://optcgapi.com/api/allSTCards/",
+                    "https://optcgapi.com/api/allPromoCards/",
+                ];
+                let mut total: u64 = 0;
+                let mut ok = 0u8;
+                let mut last_error = String::new();
+                for url in endpoints {
+                    match send_json(&client, url, None).await {
+                        Ok((status, json)) if status.is_success() => {
+                            if let Some(arr) = json.as_array() { total += arr.len() as u64; ok += 1; }
+                        }
+                        Ok((status, _)) => last_error = format!("HTTP {}", status),
+                        Err(e) => last_error = e,
                     }
                 }
-                Ok((status, _)) => ApiStatus {
-                    id: "onepiece".into(),
-                    name: "One Piece".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: format!("HTTP {}", status),
-                },
-                Err(e) => ApiStatus {
-                    id: "onepiece".into(),
-                    name: "One Piece".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: e,
-                },
+                ApiStatus {
+                    id:"onepiece".into(), name:"One Piece".into(), connected:ok > 0,
+                    latency_ms:start.elapsed().as_millis(),
+                    count: if ok > 0 { Some(total) } else { None },
+                    detail: if ok == 3 { "OPTCG API • cartes".into() } else if ok > 0 { format!("OPTCG partiel ({}/3)", ok) } else { last_error },
+                }
             }
         }
 
