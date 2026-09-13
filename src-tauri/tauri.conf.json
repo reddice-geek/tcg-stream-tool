@@ -49,8 +49,7 @@
           "Spanish",
           "Italian"
         ],
-        "displayLanguageSelector": true,
-        "installerHooks": "installer/hooks.nsh"
+        "displayLanguageSelector": true
       }
     }
   }
