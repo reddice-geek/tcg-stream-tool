@@ -1,0 +1,9 @@
+{
+  "app": {
+    "name": "TCG STREAM TOOL",
+    "welcome": "Bienvenue"
+  },
+  "overlay": {
+    "graveyard": "Cimeti\u00e8re"
+  }
+}

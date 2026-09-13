@@ -1,0 +1,50 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "category": "Utility",
+    "copyright": "\u00a9 2026 Reddice Geek - Tous droits r\u00e9serv\u00e9s - Reproduction interdite",
+    "identifier": "com.reddice.tcgstreamtool",
+    "icon": [
+      "icons/icon.png"
+    ],
+    "resources": [
+      "../data"
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "nsis": {
+        "license": "../CHARTE_LEGALE.txt",
+        "headerImage": "icons/header.bmp",
+        "sidebarImage": "icons/sidebar.bmp",
+        "installMode": "both",
+        "languages": [
+          "English",
+          "French",
+          "Spanish",
+          "Italian"
+        ],
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.0-37"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
+  },
+  "productName": "TCG STREAM TOOL",
+  "version": "1.0.1"
+}
