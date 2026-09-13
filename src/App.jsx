@@ -1,1 +1,0 @@
-import React from 'react';export default function App(){return <div style={{padding:40}}><h1>TCG STREAM TOOL v1.0.4 FIX</h1><p>Build OK - © 2026 Reddice Geek - 12 APIs</p><p>Overlay: http://localhost:8765/overlay</p></div>}

@@ -1,9 +1,0 @@
-{
-  "app": {
-    "name": "TCG STREAM TOOL",
-    "welcome": "Welcome"
-  },
-  "overlay": {
-    "graveyard": "Graveyard"
-  }
-}
