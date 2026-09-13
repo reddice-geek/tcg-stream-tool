@@ -1,1 +1,0 @@
-export default function App(){return <div style={{padding:40}}><h1>TCG STREAM TOOL v1.0.5 FIX</h1><p>Build OK © 2026 Reddice Geek</p></div>}
