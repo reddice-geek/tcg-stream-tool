@@ -220,8 +220,9 @@ async fn api_status(game: String, api_url: Option<String>, api_key: Option<Strin
 
         "onepiece" => {
             let url = api_url
+                .as_deref()
                 .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| "https://optcgapi.com/api/allSets/".into());
+                .unwrap_or("https://optcgapi.com/api/allSets/");
 
             match send_json(&client, &url, api_key).await {
                 Ok((status, json)) if status.is_success() => {
