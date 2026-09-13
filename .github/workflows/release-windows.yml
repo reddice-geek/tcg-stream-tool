@@ -25,6 +25,29 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Prepare installer files
+        shell: powershell
+        run: |
+          Copy-Item "CHARTE_LEGALE.txt" "src-tauri/CHARTE_LEGALE.txt" -Force
+
+          Write-Host "=== Verification des fichiers ==="
+
+          if (!(Test-Path "src-tauri/CHARTE_LEGALE.txt")) {
+            throw "CHARTE_LEGALE.txt introuvable"
+          }
+
+          if (!(Test-Path "src-tauri/icons/icon.ico")) {
+            throw "icon.ico introuvable"
+          }
+
+          if (!(Test-Path "src-tauri/icons/icon.png")) {
+            throw "icon.png introuvable"
+          }
+
+          Write-Host "Licence OK"
+          Write-Host "ICO OK"
+          Write-Host "PNG OK"
+
       - name: Install frontend dependencies
         shell: powershell
         run: npm install --no-audit --no-fund
@@ -42,6 +65,12 @@ jobs:
           releaseBody: |
             Version Windows de TCG STREAM TOOL.
 
-            Téléchargez le fichier .exe ci-dessous puis lancez l'installation.
+            Installateur multilingue :
+            - Français
+            - English
+            - Español
+            - Italiano
+
+            Les conditions générales doivent être acceptées pendant l'installation.
           releaseDraft: false
           prerelease: false
