@@ -1,1 +1,45 @@
+name: Build Windows EXE
 
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build and publish Windows installer
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "TCG STREAM TOOL v__VERSION__"
+          releaseBody: |
+            Version Windows de TCG STREAM TOOL.
+
+            Téléchargez le fichier .exe ci-dessous puis lancez l'installation.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: false
