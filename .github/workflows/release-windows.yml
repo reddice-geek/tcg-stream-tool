@@ -29,24 +29,10 @@ jobs:
         shell: powershell
         run: |
           Copy-Item "CHARTE_LEGALE.txt" "src-tauri/CHARTE_LEGALE.txt" -Force
-
-          Write-Host "=== Verification des fichiers ==="
-
-          if (!(Test-Path "src-tauri/CHARTE_LEGALE.txt")) {
-            throw "CHARTE_LEGALE.txt introuvable"
-          }
-
-          if (!(Test-Path "src-tauri/icons/icon.ico")) {
-            throw "icon.ico introuvable"
-          }
-
-          if (!(Test-Path "src-tauri/icons/icon.png")) {
-            throw "icon.png introuvable"
-          }
-
-          Write-Host "Licence OK"
-          Write-Host "ICO OK"
-          Write-Host "PNG OK"
+          if (!(Test-Path "src-tauri/CHARTE_LEGALE.txt")) { throw "CHARTE_LEGALE.txt introuvable" }
+          if (!(Test-Path "src-tauri/icons/icon.ico")) { throw "icon.ico introuvable" }
+          if (!(Test-Path "src-tauri/icons/icon.png")) { throw "icon.png introuvable" }
+          Write-Host "Fichiers installateur OK"
 
       - name: Install frontend dependencies
         shell: powershell
@@ -65,12 +51,15 @@ jobs:
           releaseBody: |
             Version Windows de TCG STREAM TOOL.
 
-            Installateur multilingue :
-            - Français
-            - English
-            - Español
-            - Italiano
+            - Caméra réelle avec sélection du périphérique
+            - FPS caméra mesurés en direct
+            - État et latence réels des API
+            - YGOPRODeck et Pokémon TCG connectés aux vraies API
+            - One Piece configurable dans les réglages
+            - Recherche réelle de cartes Yu-Gi-Oh! via YGOPRODeck
+            - Overlay local OBS/Streamlabs avec URL dédiée
+            - Installateur multilingue + conditions générales
 
-            Les conditions générales doivent être acceptées pendant l'installation.
+            Téléchargez le fichier .exe ci-dessous puis lancez l'installation.
           releaseDraft: false
           prerelease: false
