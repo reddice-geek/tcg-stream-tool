@@ -31,13 +31,7 @@ const TCG_OPTIONS = [
 const TCG_LABEL = Object.fromEntries(TCG_OPTIONS);
 
 const LOCAL_SOURCE_INFO = {
-  naruto: { status:'130 LOCAL', connected:true },
-  lorcana: { status:'SCAN', connected:false },
-  digimon: { status:'SCAN', connected:false },
-  dragonball: { status:'SCAN', connected:false },
-  unionarena: { status:'SCAN', connected:false },
-  weiss: { status:'SCAN', connected:false },
-  fleshblood: { status:'SCAN', connected:false }
+  naruto: { status:'130 LOCAL', connected:true }
 };
 
 function fmtCount(n){ if(n == null) return '—'; return new Intl.NumberFormat().format(n); }
@@ -138,8 +132,6 @@ export default function App(){
   });
   const [wizardOpen,setWizardOpen] = useState(!localStorage.getItem('tcg_profile'));
   const [wizardStep,setWizardStep] = useState(1);
-  const [onePieceUrl,setOnePieceUrl] = useState(localStorage.getItem('onepiece_url') || '');
-  const [onePieceKey,setOnePieceKey] = useState(localStorage.getItem('onepiece_key') || '');
   const [release,setRelease] = useState(null);
   const [nativeUpdate,setNativeUpdate] = useState(null);
   const [updaterBusy,setUpdaterBusy] = useState(false);
@@ -212,14 +204,19 @@ export default function App(){
 
         setBootStatus('Vérification des banques de données…');
         setBootProgress(38);
-        const opUrl=localStorage.getItem('onepiece_url')||'';
-        const opKey=localStorage.getItem('onepiece_key')||'';
         const startupDefs=[
           ['ygo','YGOPRODeck',null,null],
           ['pokemon','Pokémon TCG',null,null],
-          ['onepiece','One Piece',opUrl||null,opKey||null],
+          ['onepiece','One Piece',null,null],
+          ['vanguard','Cardfight!! Vanguard',null,null],
+          ['naruto','Naruto Mythos',null,null],
           ['magic','Magic / Scryfall',null,null],
-          ['vanguard','Cardfight!! Vanguard',null,null]
+          ['lorcana','Disney Lorcana',null,null],
+          ['digimon','Digimon',null,null],
+          ['dragonball','Dragon Ball Super',null,null],
+          ['unionarena','Union Arena',null,null],
+          ['weiss','Weiss Schwarz',null,null],
+          ['fleshblood','Flesh and Blood',null,null]
         ];
         const startupResults=[];
         for(let i=0;i<startupDefs.length;i++){
@@ -263,7 +260,7 @@ export default function App(){
       }
     })();
 
-    const id=setInterval(refreshApis,30000);
+    const id=setInterval(refreshApis,3600000);
     return ()=>{
       mounted = false;
       clearInterval(id);
@@ -294,14 +291,19 @@ export default function App(){
   },[detectionOn,cameraOn,selectedTcg]);
 
   async function refreshApis(){
-    const url=localStorage.getItem('onepiece_url')||'';
-    const key=localStorage.getItem('onepiece_key')||'';
     const defs=[
       ['ygo','YGOPRODeck',null,null],
       ['pokemon','Pokémon TCG',null,null],
-      ['onepiece','One Piece',url||null,key||null],
+      ['onepiece','One Piece',null,null],
+      ['vanguard','Cardfight!! Vanguard',null,null],
+      ['naruto','Naruto Mythos',null,null],
       ['magic','Magic / Scryfall',null,null],
-      ['vanguard','Cardfight!! Vanguard',null,null]
+      ['lorcana','Disney Lorcana',null,null],
+      ['digimon','Digimon',null,null],
+      ['dragonball','Dragon Ball Super',null,null],
+      ['unionarena','Union Arena',null,null],
+      ['weiss','Weiss Schwarz',null,null],
+      ['fleshblood','Flesh and Blood',null,null]
     ];
 
     const results = await Promise.all(
@@ -713,7 +715,6 @@ export default function App(){
   }
 
   function saveSettings(){
-    localStorage.setItem('onepiece_url',onePieceUrl); localStorage.setItem('onepiece_key',onePieceKey);
     setSettingsOpen(false); refreshApis();
   }
 
@@ -877,8 +878,8 @@ export default function App(){
             const a=apis.find(x=>x.id===id);
             const local=LOCAL_SOURCE_INFO[id];
             const connected=a ? a.connected : Boolean(local?.connected);
-            let value='SCAN';
-            if(a) value=a.connected ? fmtCount(a.count) : 'OFF';
+            let value='…';
+            if(a) value=a.connected ? (a.count != null ? fmtCount(a.count) : 'API') : 'OFF';
             else if(local?.status) value=local.status;
             return <div className="source-row" key={id}>
               <span><i className={connected?'dot ok':'dot'}></i>{name}</span>
@@ -933,7 +934,7 @@ export default function App(){
           <label className="checkline"><input type="checkbox" checked={detectionOn} onChange={e=>setDetectionOn(e.target.checked)}/><span>Détection automatique — analyser la carte et son code</span></label>
           <button className="primary full scan-main" disabled={!cameraOn || detecting} onClick={()=>scanCameraCard({automatic:false})}>{detecting?'Analyse…':'SCANNER MAINTENANT'}</button>
           <label className="checkline"><input type="checkbox" checked={autoOverlay} onChange={e=>setAutoOverlay(e.target.checked)}/><span>{tr.autoOverlay}</span></label>
-          <small>{selectedTcg==='ygo'?'YGO : vérifie d’abord la présence et la netteté de la carte, puis lit le passcode de 8 chiffres en bas à gauche et le confirme par API.':selectedTcg==='vanguard'?'Vanguard : analyse la carte puis lit le code en bas à droite, ex. D-BT01/001EN, et le vérifie dans la cardlist.':selectedTcg==='naruto'?'Naruto Mythos : analyse la carte + numéro x/130 à gauche + édition à droite, puis vérifie la base locale.':'Ce TCG est sélectionnable mais son scanner dédié sera ajouté sans utiliser de recherche aléatoire.'}</small>
+          <small>{selectedTcg==='ygo'?'YGO : vérifie d’abord la présence et la netteté de la carte, puis lit le passcode de 8 chiffres en bas à gauche et le confirme par API.':selectedTcg==='vanguard'?'Vanguard : analyse la carte puis lit le code en bas à droite, ex. D-BT01/001EN, et le vérifie dans la cardlist.':selectedTcg==='naruto'?'Naruto Mythos : analyse la carte + numéro x/130 à gauche + édition à droite, puis vérifie la base locale.':'Source publique intégrée. Le scanner utilise la zone code de la carte et valide le résultat avec la base correspondante lorsqu’un code exploitable est détecté.'}</small>
           <div className="ocr-box"><span>OCR / CODE</span><b>{lastOcr || '—'}</b></div>
           {lastDetected && <div className="detected-box"><span>{tr.detected}</span><b>{lastDetected}</b></div>}
         </div>
@@ -946,9 +947,7 @@ export default function App(){
       <label>Nom de chaîne<input value={profile.channel} onChange={e=>setProfile({...profile,channel:e.target.value})}/></label>
       <label>Plateforme<select value={profile.platform} onChange={e=>setProfile({...profile,platform:e.target.value})}><option value="twitch">Twitch</option><option value="youtube">YouTube</option><option value="tiktok">TikTok</option><option value="other">Autre</option></select></label>
       <label>TCG par défaut<select value={selectedTcg} onChange={e=>setSelectedTcg(e.target.value)}>{TCG_OPTIONS.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>
-      <label>{tr.onePiece} URL<input value={onePieceUrl} onChange={e=>setOnePieceUrl(e.target.value)} placeholder="Laisser vide pour la source par défaut"/></label>
-      <label>API key<input type="password" value={onePieceKey} onChange={e=>setOnePieceKey(e.target.value)} placeholder="Optionnel"/></label>
-      <p>Les réglages du profil restent enregistrés localement. Tu peux aussi relancer l'assistant complet.</p>
+      <p>Les API publiques sont intégrées directement dans TCG STREAM TOOL : aucune clé API n’est demandée à l’utilisateur.</p>
       <div className="actions">
         <button className="primary" onClick={()=>{persistProfile(profile);saveSettings();}}>{tr.save}</button>
         <button className="ghost" onClick={()=>{setWizardStep(1);setWizardOpen(true);setSettingsOpen(false);}}>Assistant de profil</button>
