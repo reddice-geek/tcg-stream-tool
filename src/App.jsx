@@ -273,7 +273,14 @@ export default function App(){
   useEffect(()=>{ localStorage.setItem('tcg_lang',lang); },[lang]);
   useEffect(()=>{ localStorage.setItem('auto_overlay',autoOverlay?'1':'0'); },[autoOverlay]);
   useEffect(()=>{ localStorage.setItem('auto_detection',detectionOn?'1':'0'); },[detectionOn]);
-  useEffect(()=>{ localStorage.setItem('scan_tcg',selectedTcg); setLastOcr(''); setLastDetected(''); },[selectedTcg]);
+  useEffect(()=>{
+    localStorage.setItem('scan_tcg',selectedTcg);
+    setLastOcr('');
+    setLastDetected('');
+    setQuery('');
+    setCard(null);
+    autoCandidateRef.current={key:'',hits:0};
+  },[selectedTcg]);
 
   useEffect(()=>{
     clearInterval(detectionTimerRef.current);
@@ -619,6 +626,40 @@ export default function App(){
     return idx>=1 && idx<=130 ? `${idx}/130` : '';
   }
 
+
+  function normalizeNarutoName(text){
+    return String(text || '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g,'')
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g,' ')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+
+  function narutoNameFromOcr(text){
+    const hay=normalizeNarutoName(text);
+    if(hay.length<3) return null;
+    let best=null;
+    let bestScore=0;
+    for(const entry of narutoSet1){
+      const names=[entry.name,entry.title].filter(Boolean).map(normalizeNarutoName);
+      for(const n of names){
+        if(!n) continue;
+        if(hay.includes(n) || n.includes(hay)){
+          const score=Math.min(hay.length,n.length)/Math.max(hay.length,n.length);
+          if(score>bestScore){ best=entry; bestScore=score; }
+        }else{
+          const words=n.split(' ').filter(w=>w.length>=4);
+          const hits=words.filter(w=>hay.includes(w)).length;
+          const score=words.length ? hits/words.length : 0;
+          if(score>bestScore){ best=entry; bestScore=score; }
+        }
+      }
+    }
+    return bestScore>=0.5 ? best : null;
+  }
+
   function captureCardImage(){
     try{
       const video=videoRef.current;
@@ -695,26 +736,63 @@ export default function App(){
 
       if(selectedTcg==='naruto'){
         const worker=await getVisionWorker();
-        const left=await recognizeBest(
+
+        // Naruto Mythos : le numéro n'est pas toujours au même pixel selon cadrage/édition.
+        // On tente plusieurs bandes basses puis on lit aussi toute la carte pour récupérer le nom.
+        const numberRead=await recognizeBest(
           worker,
-          ['naruto-number','naruto-number-wide','bottom-left'],
+          ['naruto-number','naruto-number-wide','bottom-left','bottom-wide'],
           '0123456789/OQIL',
           extractNarutoNumber
         );
-        const right=await recognizeZone(worker,'naruto-edition','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789èéÈÉ');
-        confidence=left.confidence || 0;
-        detectedCode=left.code || '';
-        setLastOcr(`${detectedCode || cleanOcrText(left.text) || '—'} • ${Math.round(confidence)}% | ${cleanOcrText(right.text) || 'édition ?'}`);
+        const editionRead=await recognizeZone(
+          worker,
+          'naruto-edition',
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789èéÈÉ'
+        );
+        const fullRead=await recognizeZone(
+          worker,
+          'card-full',
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -éèêàùçÉÈÊÀÙÇ/'
+        );
+
+        detectedCode=numberRead.code || extractNarutoNumber(fullRead.text) || '';
+        confidence=Math.max(numberRead.confidence || 0, detectedCode ? (fullRead.confidence || 0) : 0);
+
+        let entry=null;
         const m=detectedCode.match(/^(\d{1,3})\/130$/);
-        if(!m) throw new Error('Numéro Naruto Mythos non reconnu. Place bien le bas gauche de la carte dans le cadre (ex. 125/130).');
-        const idx=Number(m[1]);
-        const entry=narutoSet1.find(x=>x.index===idx);
-        if(!entry) throw new Error(`Carte ${idx}/130 absente de la base locale.`);
+        if(m){
+          entry=narutoSet1.find(x=>x.index===Number(m[1])) || null;
+        }
+        if(!entry){
+          entry=narutoNameFromOcr(`${fullRead.text || ''} ${numberRead.text || ''}`);
+          if(entry) detectedCode=entry.number;
+        }
+
+        const rawPreview=cleanOcrText(fullRead.text || numberRead.text || '');
+        setLastOcr(`${detectedCode || 'code ?'} • ${Math.round(confidence)}% | ${rawPreview || 'nom ?'}`);
+
+        if(!entry){
+          if(automatic) return;
+          throw new Error('Carte Naruto non reconnue. Cadre toute la carte : le logiciel cherche maintenant le numéro x/130 ET le nom de la carte.');
+        }
+
+        // Pour Naruto, la validation finale se fait contre la base locale 1..130.
+        const stableKey=`naruto:${entry.index}`;
         if(automatic){
-          if(confidence<45) return;
-          if(!stableAutoCandidate(`naruto:${idx}`)){ setLastDetected(`Code lu • vérification 1/2 • ${idx}/130`); return; }
-        }else if(confidence<45 && !(await acceptLowConfidence(`${entry.title} (${idx}/130)`,confidence))) return;
-        found=makeNarutoCard(entry,right.text,captureCardImage());
+          if(confidence<35) return;
+          if(!stableAutoCandidate(stableKey)){
+            setLastDetected(`Carte lue • vérification 1/2 • ${entry.title}`);
+            return;
+          }
+        }else if(confidence<35 && !(await acceptLowConfidence(`${entry.title} (${entry.number})`,confidence))){
+          return;
+        }
+
+        found=makeNarutoCard(entry,editionRead.text,captureCardImage());
+        found.id=entry.number;
+        found.number=entry.number;
+        found.set=entry.set;
       }else{
         // Analyse universelle : la carte ENTIÈRE est envoyée à l'API publique de reconnaissance.
         // Le résultat est ensuite résolu vers le produit afin de récupérer nom, numéro, set et image.
