@@ -823,7 +823,30 @@ export default function App(){
   return <div className="app">
     <header className="topbar">
       <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.13</span></div></div>
-      <div className="user"><strong>Quentin</strong><span>● LIVE READY</span></div>
+      <div className="header-update" title="Mises à jour de TCG STREAM TOOL">
+        <div className="header-update-versions">
+          <strong>MISE À JOUR</strong>
+          <span>Actuelle : <b>{release?.current || '1.0.13'}</b></span>
+          <span>Dernière : <b>{nativeUpdate?.version || release?.latest || '—'}</b></span>
+        </div>
+        {(nativeUpdate || release?.update_available) ? (
+          <button
+            className="header-update-btn available"
+            onClick={nativeUpdate ? installNativeUpdate : ()=>checkNativeUpdate(true)}
+            disabled={updaterBusy}
+          >
+            {updaterBusy ? (updaterProgress > 0 ? `${updaterProgress}%` : 'Vérification…') : (nativeUpdate ? 'METTRE À JOUR' : 'VÉRIFIER')}
+          </button>
+        ) : (
+          <button
+            className="header-update-btn"
+            onClick={()=>checkNativeUpdate(true)}
+            disabled={updaterBusy}
+          >
+            {updaterBusy ? 'Vérification…' : 'À JOUR'}
+          </button>
+        )}
+      </div>
       <div className="top-actions">
         <select value={lang} onChange={e=>setLang(e.target.value)}><option value="fr">FR</option><option value="en">EN</option><option value="es">ES</option><option value="it">IT</option></select>
         <div className="mode-select-wrap" title="Choisir le TCG à scanner">
