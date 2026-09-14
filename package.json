@@ -1,7 +1,7 @@
 {
   "name": "tcg-stream-tool",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.0.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,8 @@
     "react-dom": "18.3.1",
     "@tauri-apps/api": "2.3.0",
     "@tauri-apps/plugin-shell": "2.2.0",
-    "tesseract.js": "6.0.1"
+    "tesseract.js": "6.0.1",
+    "@tauri-apps/plugin-updater": "2.3.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.3.0",
