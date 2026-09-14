@@ -115,7 +115,7 @@ export default function App(){
   const [updaterBusy,setUpdaterBusy] = useState(false);
   const [updaterProgress,setUpdaterProgress] = useState(0);
   const [updaterMessage,setUpdaterMessage] = useState('');
-  const [detectionOn,setDetectionOn] = useState(false);
+  const [detectionOn,setDetectionOn] = useState(localStorage.getItem('auto_detection') === '1');
   const [detecting,setDetecting] = useState(false);
   const [lastOcr,setLastOcr] = useState('');
   const [lastDetected,setLastDetected] = useState('');
@@ -134,6 +134,7 @@ export default function App(){
   const detectionTimerRef = useRef(null);
   const detectingRef = useRef(false);
   const lastDetectedRef = useRef('');
+  const autoCandidateRef = useRef({ key:'', hits:0, at:0 });
 
   const connectedCount = apis.filter(a=>a.connected).length;
   const avgLatency = useMemo(()=>{
@@ -244,7 +245,23 @@ export default function App(){
 
   useEffect(()=>{ localStorage.setItem('tcg_lang',lang); },[lang]);
   useEffect(()=>{ localStorage.setItem('auto_overlay',autoOverlay?'1':'0'); },[autoOverlay]);
+  useEffect(()=>{ localStorage.setItem('auto_detection',detectionOn?'1':'0'); },[detectionOn]);
   useEffect(()=>{ localStorage.setItem('scan_tcg',selectedTcg); setLastOcr(''); setLastDetected(''); },[selectedTcg]);
+
+  useEffect(()=>{
+    clearInterval(detectionTimerRef.current);
+    detectionTimerRef.current=null;
+    autoCandidateRef.current={key:'',hits:0,at:0};
+    if(!detectionOn || !cameraOn) return;
+    const tick=()=>scanCameraCard({automatic:true});
+    const warmup=setTimeout(tick,900);
+    detectionTimerRef.current=setInterval(tick,2200);
+    return()=>{
+      clearTimeout(warmup);
+      clearInterval(detectionTimerRef.current);
+      detectionTimerRef.current=null;
+    };
+  },[detectionOn,cameraOn,selectedTcg]);
 
   async function refreshApis(){
     const url=localStorage.getItem('onepiece_url')||'';
@@ -452,6 +469,46 @@ export default function App(){
     return canvas;
   }
 
+  function analyzeCardFrame(){
+    const video=videoRef.current;
+    if(!video || !video.videoWidth || !video.videoHeight) throw new Error('La caméra n’est pas prête');
+    const r=getCardRect(video);
+    const canvas=document.createElement('canvas');
+    canvas.width=240; canvas.height=348;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,canvas.width,canvas.height);
+    const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    let sum=0, sum2=0, edges=0, samples=0;
+    const gray=new Uint8Array(canvas.width*canvas.height);
+    for(let i=0,p=0;i<data.length;i+=4,p++){
+      const g=Math.round(data[i]*.299+data[i+1]*.587+data[i+2]*.114);
+      gray[p]=g; sum+=g; sum2+=g*g; samples++;
+    }
+    const mean=sum/samples;
+    const variance=Math.max(0,sum2/samples-mean*mean);
+    for(let y=1;y<canvas.height;y+=3){
+      for(let x=1;x<canvas.width;x+=3){
+        const i=y*canvas.width+x;
+        if(Math.abs(gray[i]-gray[i-1])>32 || Math.abs(gray[i]-gray[i-canvas.width])>32) edges++;
+      }
+    }
+    const edgeRatio=edges/((Math.floor((canvas.height-1)/3)+1)*(Math.floor((canvas.width-1)/3)+1));
+    const score=Math.max(0,Math.min(100,Math.round((Math.min(variance,3200)/3200)*60 + Math.min(edgeRatio,.22)/.22*40)));
+    return {score, variance, edgeRatio};
+  }
+
+  function stableAutoCandidate(key){
+    const now=Date.now();
+    const prev=autoCandidateRef.current;
+    if(prev.key===key && now-prev.at<6500){
+      const next={key,hits:prev.hits+1,at:now};
+      autoCandidateRef.current=next;
+      return next.hits>=2;
+    }
+    autoCandidateRef.current={key,hits:1,at:now};
+    return false;
+  }
+
   async function recognizeZone(worker,kind,whitelist){
     if(whitelist){
       await worker.setParameters({
@@ -486,13 +543,20 @@ export default function App(){
     return window.confirm(`Confiance OCR ${Math.round(confidence)}%\n\nRésultat détecté : ${label}\n\nConfirmer cette carte ?`);
   }
 
-  async function scanCameraCard(){
+  async function scanCameraCard({automatic=false}={}){
     if(!cameraOn || detectingRef.current) return;
+    if(automatic && !detectionOn) return;
     detectingRef.current=true;
     setDetecting(true);
     setLastDetected('');
 
     try{
+      const visual=analyzeCardFrame();
+      if(visual.score<30){
+        if(!automatic) throw new Error('Aucune carte suffisamment nette détectée dans le cadre.');
+        setLastOcr(`Carte non détectée • visuel ${visual.score}%`);
+        return;
+      }
       const worker=await getVisionWorker();
       let found=null;
       let detectedCode='';
@@ -506,7 +570,10 @@ export default function App(){
         detectedCode=match?.[0] || '';
         setLastOcr(`${detectedCode || cleanOcrText(ocr.text) || '—'} • ${Math.round(confidence)}%`);
         if(!/^\d{8}$/.test(detectedCode)) throw new Error('Passcode Yu-Gi-Oh! de 8 chiffres non reconnu en bas à gauche.');
-        if(!(await acceptLowConfidence(detectedCode,confidence))) return;
+        if(automatic){
+          if(confidence<85) return;
+          if(!stableAutoCandidate(`ygo:${detectedCode}`)){ setLastDetected(`Vérification 1/2 • ${detectedCode}`); return; }
+        }else if(!(await acceptLowConfidence(detectedCode,confidence))) return;
         found=await invoke('search_ygo_by_id',{passcode:detectedCode});
       }
       else if(selectedTcg==='vanguard'){
@@ -517,7 +584,10 @@ export default function App(){
         detectedCode=match?.[0] || '';
         setLastOcr(`${detectedCode || cleanOcrText(ocr.text) || '—'} • ${Math.round(confidence)}%`);
         if(!detectedCode) throw new Error('Code Vanguard non reconnu en bas à droite. Exemple attendu : D-BT01/001EN');
-        if(!(await acceptLowConfidence(detectedCode,confidence))) return;
+        if(automatic){
+          if(confidence<85) return;
+          if(!stableAutoCandidate(`vanguard:${detectedCode}`)){ setLastDetected(`Vérification 1/2 • ${detectedCode}`); return; }
+        }else if(!(await acceptLowConfidence(detectedCode,confidence))) return;
         found=await invoke('search_vanguard_by_code',{code:detectedCode});
       }
       else if(selectedTcg==='naruto'){
@@ -532,7 +602,10 @@ export default function App(){
         const idx=Number(m[1]);
         const entry=narutoSet1.find(x=>x.index===idx);
         if(!entry) throw new Error(`Carte ${idx}/130 absente de la base locale.`);
-        if(!(await acceptLowConfidence(`${entry.title} (${idx}/130)`,left.confidence))) return;
+        if(automatic){
+          if(left.confidence<85) return;
+          if(!stableAutoCandidate(`naruto:${idx}`)){ setLastDetected(`Vérification 1/2 • ${idx}/130`); return; }
+        }else if(!(await acceptLowConfidence(`${entry.title} (${idx}/130)`,left.confidence))) return;
         found=makeNarutoCard(entry,right.text);
       }
       else {
@@ -543,13 +616,13 @@ export default function App(){
       setScanConfidence(Math.round(confidence));
       setCard(found);
       setQuery(found.name || detectedCode);
-      setLastDetected(`${found.name || detectedCode} • ${Math.round(confidence)}%`);
+      setLastDetected(`${found.name || detectedCode} • OCR ${Math.round(confidence)}% • carte OK`);
       setToast(`${tr.detected} : ${found.name || detectedCode}`);
       if(autoOverlay) await showCardOnOverlay(found);
     }catch(e){
       console.warn('Vision:',e);
-      setToast(String(e));
-      if(!lastOcr) setLastOcr('Aucun code valide');
+      if(!automatic) setToast(String(e));
+      if(!automatic && !lastOcr) setLastOcr('Aucun code valide');
     }finally{
       detectingRef.current=false;
       setDetecting(false);
@@ -752,10 +825,11 @@ export default function App(){
               {TCG_OPTIONS.map(([id,name])=><option key={id} value={id}>{name}</option>)}
             </select>
           </label>
-          <div className={detecting?'vision-status on':'vision-status'}><i className={detecting?'dot ok':'dot'}></i>{detecting?'Analyse du code…':'Prêt — détection manuelle uniquement'}</div>
-          <button className="primary full scan-main" disabled={!cameraOn || detecting} onClick={scanCameraCard}>{detecting?'Analyse…':'SCANNER'}</button>
+          <div className={(detecting || detectionOn)?'vision-status on':'vision-status'}><i className={(detecting || detectionOn)?'dot ok':'dot'}></i>{detecting?'Analyse carte + code…':detectionOn?'Détection automatique active • analyse toutes les 2,2 s':'Prêt — mode manuel'}</div>
+          <label className="checkline"><input type="checkbox" checked={detectionOn} onChange={e=>setDetectionOn(e.target.checked)}/><span>Détection automatique — analyser la carte et son code</span></label>
+          <button className="primary full scan-main" disabled={!cameraOn || detecting} onClick={()=>scanCameraCard({automatic:false})}>{detecting?'Analyse…':'SCANNER MAINTENANT'}</button>
           <label className="checkline"><input type="checkbox" checked={autoOverlay} onChange={e=>setAutoOverlay(e.target.checked)}/><span>{tr.autoOverlay}</span></label>
-          <small>{selectedTcg==='ygo'?'YGO : lit uniquement le passcode de 8 chiffres en bas à gauche.':selectedTcg==='vanguard'?'Vanguard : lit le code en bas à droite, ex. D-BT01/001EN.':selectedTcg==='naruto'?'Naruto Mythos : lit le numéro x/130 à gauche et l’édition à droite.':'Ce TCG est sélectionnable mais son scanner dédié sera ajouté sans utiliser de recherche aléatoire.'}</small>
+          <small>{selectedTcg==='ygo'?'YGO : vérifie d’abord la présence et la netteté de la carte, puis lit le passcode de 8 chiffres en bas à gauche et le confirme par API.':selectedTcg==='vanguard'?'Vanguard : analyse la carte puis lit le code en bas à droite, ex. D-BT01/001EN, et le vérifie dans la cardlist.':selectedTcg==='naruto'?'Naruto Mythos : analyse la carte + numéro x/130 à gauche + édition à droite, puis vérifie la base locale.':'Ce TCG est sélectionnable mais son scanner dédié sera ajouté sans utiliser de recherche aléatoire.'}</small>
           <div className="ocr-box"><span>OCR / CODE</span><b>{lastOcr || '—'}</b></div>
           {lastDetected && <div className="detected-box"><span>{tr.detected}</span><b>{lastDetected}</b></div>}
         </div>
