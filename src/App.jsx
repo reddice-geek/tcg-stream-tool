@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { check as checkForAppUpdate } from '@tauri-apps/plugin-updater';
 import { createWorker } from 'tesseract.js';
 import narutoSet1 from './data/naruto-mythos-set1.json';
 
@@ -110,6 +111,10 @@ export default function App(){
   const [onePieceUrl,setOnePieceUrl] = useState(localStorage.getItem('onepiece_url') || '');
   const [onePieceKey,setOnePieceKey] = useState(localStorage.getItem('onepiece_key') || '');
   const [release,setRelease] = useState(null);
+  const [nativeUpdate,setNativeUpdate] = useState(null);
+  const [updaterBusy,setUpdaterBusy] = useState(false);
+  const [updaterProgress,setUpdaterProgress] = useState(0);
+  const [updaterMessage,setUpdaterMessage] = useState('');
   const [detectionOn,setDetectionOn] = useState(false);
   const [detecting,setDetecting] = useState(false);
   const [lastOcr,setLastOcr] = useState('');
@@ -262,7 +267,75 @@ export default function App(){
     return results;
   }
 
-  async function checkRelease(){ try{ setRelease(await invoke('check_latest_release')); }catch(e){ console.warn(e); } }
+  async function checkRelease(){
+    try{
+      setRelease(await invoke('check_latest_release'));
+    }catch(e){
+      console.warn(e);
+    }
+
+    await checkNativeUpdate(false);
+  }
+
+  async function checkNativeUpdate(showToast = true){
+    if(updaterBusy) return;
+    setUpdaterBusy(true);
+    setUpdaterMessage('Vérification de la mise à jour…');
+    try{
+      const update = await checkForAppUpdate();
+      setNativeUpdate(update);
+      if(update){
+        setUpdaterMessage(`Version ${update.version} disponible`);
+        if(showToast) setToast(`Mise à jour ${update.version} disponible`);
+      }else{
+        setUpdaterMessage('Application à jour');
+        if(showToast) setToast('TCG STREAM TOOL est à jour');
+      }
+    }catch(e){
+      console.warn('Updater:', e);
+      setUpdaterMessage('Mise à jour automatique non configurée ou indisponible');
+      if(showToast) setToast(`Updater : ${String(e)}`);
+    }finally{
+      setUpdaterBusy(false);
+    }
+  }
+
+  async function installNativeUpdate(){
+    if(!nativeUpdate || updaterBusy) return;
+    setUpdaterBusy(true);
+    setUpdaterProgress(0);
+    setUpdaterMessage(`Téléchargement de ${nativeUpdate.version}…`);
+    let downloaded = 0;
+    let contentLength = 0;
+    try{
+      await nativeUpdate.downloadAndInstall((event)=>{
+        switch(event.event){
+          case 'Started':
+            contentLength = event.data.contentLength || 0;
+            setUpdaterMessage(`Téléchargement de ${nativeUpdate.version}…`);
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength || 0;
+            if(contentLength > 0){
+              setUpdaterProgress(Math.min(100, Math.round(downloaded * 100 / contentLength)));
+            }
+            break;
+          case 'Finished':
+            setUpdaterProgress(100);
+            setUpdaterMessage('Téléchargement terminé. Installation…');
+            break;
+          default:
+            break;
+        }
+      });
+      setUpdaterMessage('Installation lancée…');
+    }catch(e){
+      console.error('Updater install:', e);
+      setUpdaterMessage('Échec de la mise à jour');
+      setToast(`Mise à jour impossible : ${String(e)}`);
+      setUpdaterBusy(false);
+    }
+  }
 
   async function startCamera(id=deviceId){
     try{
@@ -610,7 +683,7 @@ export default function App(){
 
   return <div className="app">
     <header className="topbar">
-      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.11</span></div></div>
+      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.12</span></div></div>
       <div className="user"><strong>Quentin</strong><span>● LIVE READY</span></div>
       <div className="top-actions">
         <select value={lang} onChange={e=>setLang(e.target.value)}><option value="fr">FR</option><option value="en">EN</option><option value="es">ES</option><option value="it">IT</option></select>
@@ -688,7 +761,17 @@ export default function App(){
         </div>
         <div className="panel">
           <div className="panel-title">↻ {tr.update}</div>
-          {release ? <div className="update-box"><span>{tr.current}: <b>{release.current}</b></span><span>{tr.latest}: <b>{release.latest||'—'}</b></span><strong className={release.update_available?'warn':'oktxt'}>{release.update_available?tr.available:tr.noUpdate}</strong><button className="ghost full" onClick={checkRelease}>{tr.refresh}</button></div> : <small>Vérification GitHub…</small>}
+          {release ? <div className="update-box">
+            <span>{tr.current}: <b>{release.current}</b></span>
+            <span>{tr.latest}: <b>{nativeUpdate?.version || release.latest || '—'}</b></span>
+            <strong className={(nativeUpdate || release.update_available)?'warn':'oktxt'}>{(nativeUpdate || release.update_available)?tr.available:tr.noUpdate}</strong>
+            {updaterMessage && <small className="updater-message">{updaterMessage}</small>}
+            {updaterBusy && updaterProgress > 0 && <div className="updater-progress"><div style={{width:`${updaterProgress}%`}} /></div>}
+            {nativeUpdate && <button className="primary full" onClick={installNativeUpdate} disabled={updaterBusy}>
+              {updaterBusy ? `Installation… ${updaterProgress || 0}%` : `Installer ${nativeUpdate.version}`}
+            </button>}
+            <button className="ghost full" onClick={()=>checkNativeUpdate(true)} disabled={updaterBusy}>{tr.refresh}</button>
+          </div> : <small>Vérification GitHub…</small>}
         </div>
       </section>
     </main>
