@@ -161,7 +161,7 @@ async fn api_status(game: String, _api_url: Option<String>, _api_key: Option<Str
 
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .user_agent("TCG-STREAM-TOOL/1.0.13")
+        .user_agent("TCG-STREAM-TOOL/1.0.14")
         .build()
     {
         Ok(c) => c,
@@ -270,25 +270,33 @@ fn norm(s: &str) -> String {
 
 fn open_product_to_card(game: &str, root: &Value) -> CardResult {
     let product = root.get("product").unwrap_or(root);
-    let id = product.get("number").and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| product.get("id").map(|v| v.to_string()))
-        .unwrap_or_default();
+    let number = value_str(product, &["number", "collector_number", "card_number"]);
+    let product_id = product.get("id").map(|v| {
+        v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())
+    }).unwrap_or_default();
+    let id = if !number.is_empty() { number.to_string() } else { product_id };
     let name = value_str(product, &["name", "clean_name"]);
     let set_name = value_str(product, &["set_name", "set"]);
+    let set_abbr = value_str(product, &["set_abbr", "set_code"]);
     let rarity = value_str(product, &["rarity"]);
-    let image = value_str(product, &["image_url", "image"]);
+    let image = value_str(product, &["image_url", "image", "image_uri"]);
+    let desc = [
+        (!set_name.is_empty()).then_some(set_name),
+        (!set_abbr.is_empty()).then_some(set_abbr),
+        (!number.is_empty()).then_some(number),
+        (!rarity.is_empty()).then_some(rarity),
+    ].into_iter().flatten().collect::<Vec<_>>().join(" • ");
     CardResult {
         id,
         name: if name.is_empty() { "Carte reconnue".into() } else { name.into() },
         card_type: open_tcg_game(game).map(|x| x.1).unwrap_or("TCG").into(),
-        description: [set_name, rarity].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" • "),
+        description: desc,
         image_url: image.into(),
         atk: None,
         def: None,
         level: None,
         attribute: rarity.into(),
-        race: set_name.into(),
+        race: if set_abbr.is_empty() { set_name.into() } else { format!("{} • {}", set_abbr, set_name) },
     }
 }
 
@@ -300,7 +308,7 @@ async fn scan_open_tcg(game: String, image_data_url: String) -> Result<Universal
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(22))
-        .user_agent("TCG-STREAM-TOOL/1.0.13")
+        .user_agent("TCG-STREAM-TOOL/1.0.14")
         .build().map_err(|e| e.to_string())?;
 
     let scan = client.post("https://openapi.tcgtracking.com/v1/scan")
@@ -348,7 +356,7 @@ async fn search_card_universal(game: String, query: String, language: Option<Str
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(18))
-        .user_agent("TCG-STREAM-TOOL/1.0.13")
+        .user_agent("TCG-STREAM-TOOL/1.0.14")
         .build().map_err(|e| e.to_string())?;
     let nq = norm(q);
 
@@ -425,7 +433,7 @@ async fn search_ygo_by_id(passcode: String) -> Result<CardResult, String> {
     let url = format!("https://db.ygoprodeck.com/api/v7/cardinfo.php?id={}", code);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.13")
+        .user_agent("TCG-STREAM-TOOL/1.0.14")
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Passcode {} introuvable (HTTP {})", code, resp.status())); }
@@ -444,7 +452,7 @@ async fn search_vanguard_by_code(code: String) -> Result<CardResult, String> {
     );
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .user_agent("TCG-STREAM-TOOL/1.0.13")
+        .user_agent("TCG-STREAM-TOOL/1.0.14")
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Vanguard HTTP {}", resp.status())); }
@@ -489,7 +497,7 @@ async fn search_ygo_card(query: String, language: Option<String>) -> Result<Card
     }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.13")
+        .user_agent("TCG-STREAM-TOOL/1.0.14")
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Carte introuvable (HTTP {})", resp.status())); }
@@ -501,7 +509,7 @@ async fn search_ygo_card(query: String, language: Option<String>) -> Result<Card
 #[tauri::command]
 async fn check_latest_release() -> Result<ReleaseCheck, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();
-    let client = reqwest::Client::builder().user_agent("TCG-STREAM-TOOL/1.0.13").build().map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder().user_agent("TCG-STREAM-TOOL/1.0.14").build().map_err(|e| e.to_string())?;
     let resp = client.get("https://api.github.com/repos/reddice-geek/tcg-stream-tool/releases/latest").send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("GitHub HTTP {}", resp.status())); }
     let json: Value = resp.json().await.map_err(|e| e.to_string())?;
