@@ -30,6 +30,16 @@ const TCG_OPTIONS = [
 
 const TCG_LABEL = Object.fromEntries(TCG_OPTIONS);
 
+const LOCAL_SOURCE_INFO = {
+  naruto: { status:'130 LOCAL', connected:true },
+  lorcana: { status:'SCAN', connected:false },
+  digimon: { status:'SCAN', connected:false },
+  dragonball: { status:'SCAN', connected:false },
+  unionarena: { status:'SCAN', connected:false },
+  weiss: { status:'SCAN', connected:false },
+  fleshblood: { status:'SCAN', connected:false }
+};
+
 function fmtCount(n){ if(n == null) return '—'; return new Intl.NumberFormat().format(n); }
 function cleanOcrText(text){
   return String(text || '')
@@ -75,6 +85,26 @@ function similarity(a,b){
   if(!na || !nb) return 0;
   const max=Math.max(na.length,nb.length);
   return max ? 1-(levenshtein(na,nb)/max) : 0;
+}
+
+function extractYgoPasscode(raw){
+  const fixed=String(raw || '')
+    .toUpperCase()
+    .replace(/[OQD]/g,'0')
+    .replace(/[IL|!]/g,'1')
+    .replace(/Z/g,'2')
+    .replace(/S/g,'5')
+    .replace(/G/g,'6')
+    .replace(/B/g,'8')
+    .replace(/[^0-9]/g,'');
+  const m=fixed.match(/\d{8}/);
+  return m ? m[0] : '';
+}
+
+function extractVanguardCode(raw){
+  const t=String(raw || '').toUpperCase().replace(/\s+/g,'').replace(/[|]/g,'I');
+  const m=t.match(/[A-Z]{1,3}-[A-Z0-9]{2,12}\/[A-Z0-9-]{2,12}(?:EN)?/);
+  return m ? m[0] : '';
 }
 
 export default function App(){
@@ -442,8 +472,16 @@ export default function App(){
     const r=getCardRect(video);
     let zx=r.x, zy=r.y, zw=r.w, zh=r.h;
 
-    if(kind==='bottom-left'){
+    if(kind==='ygo-passcode'){
+      // Le passcode YGO est très petit, tout en bas à gauche : on zoome fortement dessus.
+      zx=r.x; zy=r.y+Math.floor(r.h*.79); zw=Math.floor(r.w*.64); zh=Math.floor(r.h*.21);
+    }else if(kind==='ygo-passcode-wide'){
+      // Zone de secours si la carte est légèrement décalée / inclinée.
+      zx=r.x; zy=r.y+Math.floor(r.h*.70); zw=Math.floor(r.w*.72); zh=Math.floor(r.h*.30);
+    }else if(kind==='bottom-left'){
       zx=r.x; zy=r.y+Math.floor(r.h*.65); zw=Math.floor(r.w*.62); zh=Math.floor(r.h*.35);
+    }else if(kind==='vanguard-code'){
+      zx=r.x+Math.floor(r.w*.28); zy=r.y+Math.floor(r.h*.74); zw=Math.floor(r.w*.72); zh=Math.floor(r.h*.26);
     }else if(kind==='bottom-right'){
       zx=r.x+Math.floor(r.w*.34); zy=r.y+Math.floor(r.h*.65); zw=Math.floor(r.w*.66); zh=Math.floor(r.h*.35);
     }else if(kind==='naruto-number'){
@@ -523,6 +561,21 @@ export default function App(){
     };
   }
 
+  async function recognizeBest(worker, zones, whitelist, extractor){
+    const attempts=[];
+    for(const zone of zones){
+      const r=await recognizeZone(worker,zone,whitelist);
+      const code=extractor(r.text);
+      attempts.push({...r,code,zone});
+      if(code && r.confidence>=80) break;
+    }
+    attempts.sort((a,b)=>{
+      if(Boolean(a.code)!==Boolean(b.code)) return a.code ? -1 : 1;
+      return b.confidence-a.confidence;
+    });
+    return attempts[0] || {text:'',confidence:0,code:'',zone:''};
+  }
+
   function makeNarutoCard(entry, editionText=''){
     const first=/1ST|1RE|1ERE|1ÈRE|FIRST/i.test(editionText);
     return {
@@ -563,31 +616,44 @@ export default function App(){
       let confidence=0;
 
       if(selectedTcg==='ygo'){
-        const ocr=await recognizeZone(worker,'bottom-left','0123456789');
+        const ocr=await recognizeBest(
+          worker,
+          ['ygo-passcode','ygo-passcode-wide','bottom-left'],
+          '0123456789OQDILZSBG',
+          extractYgoPasscode
+        );
         confidence=ocr.confidence;
-        const digits=ocr.text.replace(/\D/g,'');
-        const match=digits.match(/\d{8}/);
-        detectedCode=match?.[0] || '';
+        detectedCode=ocr.code || '';
         setLastOcr(`${detectedCode || cleanOcrText(ocr.text) || '—'} • ${Math.round(confidence)}%`);
-        if(!/^\d{8}$/.test(detectedCode)) throw new Error('Passcode Yu-Gi-Oh! de 8 chiffres non reconnu en bas à gauche.');
+        if(!/^\d{8}$/.test(detectedCode)) {
+          throw new Error('Passcode YGO non lu. Place le bas de la carte dans le cadre : 8 chiffres attendus en bas à gauche.');
+        }
         if(automatic){
-          if(confidence<85) return;
-          if(!stableAutoCandidate(`ygo:${detectedCode}`)){ setLastDetected(`Vérification 1/2 • ${detectedCode}`); return; }
-        }else if(!(await acceptLowConfidence(detectedCode,confidence))) return;
-        found=await invoke('search_ygo_by_id',{passcode:detectedCode});
+          // L'API est la preuve finale : on accepte un OCR moyen s'il donne 8 chiffres stables 2 fois.
+          if(confidence<55) return;
+          if(!stableAutoCandidate(`ygo:${detectedCode}`)){ setLastDetected(`Code lu • vérification 1/2 • ${detectedCode}`); return; }
+        }
+        try{
+          found=await invoke('search_ygo_by_id',{passcode:detectedCode});
+        }catch(apiError){
+          throw new Error(`Code ${detectedCode} lu, mais aucune carte YGO correspondante n'a été confirmée par la base.`);
+        }
       }
       else if(selectedTcg==='vanguard'){
-        const ocr=await recognizeZone(worker,'bottom-right','ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/');
+        const ocr=await recognizeBest(
+          worker,
+          ['vanguard-code','bottom-right'],
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/',
+          extractVanguardCode
+        );
         confidence=ocr.confidence;
-        const normalized=ocr.text.toUpperCase().replace(/\s+/g,'');
-        const match=normalized.match(/[A-Z]-[A-Z0-9]+\/[A-Z0-9-]+(?:EN)?/);
-        detectedCode=match?.[0] || '';
+        detectedCode=ocr.code || '';
         setLastOcr(`${detectedCode || cleanOcrText(ocr.text) || '—'} • ${Math.round(confidence)}%`);
-        if(!detectedCode) throw new Error('Code Vanguard non reconnu en bas à droite. Exemple attendu : D-BT01/001EN');
+        if(!detectedCode) throw new Error('Code Vanguard non lu. Exemple attendu : D-BT01/001EN en bas à droite.');
         if(automatic){
-          if(confidence<85) return;
-          if(!stableAutoCandidate(`vanguard:${detectedCode}`)){ setLastDetected(`Vérification 1/2 • ${detectedCode}`); return; }
-        }else if(!(await acceptLowConfidence(detectedCode,confidence))) return;
+          if(confidence<55) return;
+          if(!stableAutoCandidate(`vanguard:${detectedCode}`)){ setLastDetected(`Code lu • vérification 1/2 • ${detectedCode}`); return; }
+        }
         found=await invoke('search_vanguard_by_code',{code:detectedCode});
       }
       else if(selectedTcg==='naruto'){
@@ -616,7 +682,7 @@ export default function App(){
       setScanConfidence(Math.round(confidence));
       setCard(found);
       setQuery(found.name || detectedCode);
-      setLastDetected(`${found.name || detectedCode} • OCR ${Math.round(confidence)}% • carte OK`);
+      setLastDetected(`${found.name || detectedCode} • code ${detectedCode || 'local'} • confirmé`);
       setToast(`${tr.detected} : ${found.name || detectedCode}`);
       if(autoOverlay) await showCardOnOverlay(found);
     }catch(e){
@@ -784,7 +850,18 @@ export default function App(){
 
         <div className="panel">
           <div className="panel-title">▰ {tr.sources}</div>
-          {apis.map(a=><div className="source-row" key={a.id}><span><i className={a.connected?'dot ok':'dot'}></i>{a.name}</span><b>{a.connected?fmtCount(a.count):'OFF'}</b></div>)}
+          {TCG_OPTIONS.map(([id,name])=>{
+            const a=apis.find(x=>x.id===id);
+            const local=LOCAL_SOURCE_INFO[id];
+            const connected=a ? a.connected : Boolean(local?.connected);
+            let value='SCAN';
+            if(a) value=a.connected ? fmtCount(a.count) : 'OFF';
+            else if(local?.status) value=local.status;
+            return <div className="source-row" key={id}>
+              <span><i className={connected?'dot ok':'dot'}></i>{name}</span>
+              <b>{value}</b>
+            </div>;
+          })}
           <div className="source-row sep"><span>{tr.latency} API</span><b>~{avgLatency || '—'} ms</b></div>
           <button className="ghost full" onClick={refreshApis}>{tr.refresh}</button>
         </div>
