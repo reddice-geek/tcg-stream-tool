@@ -937,20 +937,6 @@ export default function App(){
           <div className="ocr-box"><span>OCR / CODE</span><b>{lastOcr || '—'}</b></div>
           {lastDetected && <div className="detected-box"><span>{tr.detected}</span><b>{lastDetected}</b></div>}
         </div>
-        <div className="panel">
-          <div className="panel-title">↻ {tr.update}</div>
-          {release ? <div className="update-box">
-            <span>{tr.current}: <b>{release.current}</b></span>
-            <span>{tr.latest}: <b>{nativeUpdate?.version || release.latest || '—'}</b></span>
-            <strong className={(nativeUpdate || release.update_available)?'warn':'oktxt'}>{(nativeUpdate || release.update_available)?tr.available:tr.noUpdate}</strong>
-            {updaterMessage && <small className="updater-message">{updaterMessage}</small>}
-            {updaterBusy && updaterProgress > 0 && <div className="updater-progress"><div style={{width:`${updaterProgress}%`}} /></div>}
-            {nativeUpdate && <button className="primary full" onClick={installNativeUpdate} disabled={updaterBusy}>
-              {updaterBusy ? `Installation… ${updaterProgress || 0}%` : `Installer ${nativeUpdate.version}`}
-            </button>}
-            <button className="ghost full" onClick={()=>checkNativeUpdate(true)} disabled={updaterBusy}>{tr.refresh}</button>
-          </div> : <small>Vérification GitHub…</small>}
-        </div>
       </section>
     </main>
 
