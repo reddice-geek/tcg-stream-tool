@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { createWorker } from 'tesseract.js';
+import narutoSet1 from './data/naruto-mythos-set1.json';
 
 const T = {
   fr: { sources:'SOURCES', overlays:'OVERLAYS', camera:'Caméra', api:'API CONNECTÉES', latency:'LATENCE', fps:'FPS', search:'Rechercher une carte Yu-Gi-Oh!', send:'Afficher sur le stream', hide:'Masquer', copy:'Copier le lien OBS', copied:'Lien copié', settings:'Réglages', update:'Mise à jour', current:'Version actuelle', latest:'Dernière version', noUpdate:'À jour', available:'Mise à jour disponible', refresh:'Actualiser', camOff:'Caméra désactivée', chooseCam:'Choisir la caméra', overlayUrl:'URL OVERLAY OBS', detection:'Reconnaissance visuelle', detectionOff:'Détection arrêtée', detectionOn:'Détection automatique active', detecting:'Analyse de la carte…', detected:'Carte détectée', startDetection:'Activer la détection', stopDetection:'Arrêter la détection', scanNow:'Scanner maintenant', detectionHelp:'Place la carte droite face à la caméra, assez proche, avec le nom bien visible.', onePiece:'API One Piece', save:'Enregistrer', autoOverlay:'Afficher automatiquement la carte détectée dans OBS' },
@@ -8,6 +9,25 @@ const T = {
   es: { sources:'FUENTES', overlays:'OVERLAYS', camera:'Cámara', api:'APIS CONECTADAS', latency:'LATENCIA', fps:'FPS', search:'Buscar una carta Yu-Gi-Oh!', send:'Mostrar en stream', hide:'Ocultar', copy:'Copiar enlace OBS', copied:'Enlace copiado', settings:'Ajustes', update:'Actualización', current:'Versión actual', latest:'Última versión', noUpdate:'Actualizado', available:'Actualización disponible', refresh:'Actualizar', camOff:'Cámara desactivada', chooseCam:'Elegir cámara', overlayUrl:'URL OVERLAY OBS', detection:'Reconocimiento visual', detectionOff:'Detección detenida', detectionOn:'Detección automática activa', detecting:'Analizando carta…', detected:'Carta detectada', startDetection:'Activar detección', stopDetection:'Detener detección', scanNow:'Escanear ahora', detectionHelp:'Coloca la carta recta y cerca de la cámara, con el nombre claramente visible.', onePiece:'API One Piece', save:'Guardar', autoOverlay:'Mostrar automáticamente la carta detectada en OBS' },
   it: { sources:'SORGENTI', overlays:'OVERLAY', camera:'Fotocamera', api:'API CONNESSE', latency:'LATENZA', fps:'FPS', search:'Cerca una carta Yu-Gi-Oh!', send:'Mostra nello stream', hide:'Nascondi', copy:'Copia link OBS', copied:'Link copiato', settings:'Impostazioni', update:'Aggiornamento', current:'Versione attuale', latest:'Ultima versione', noUpdate:'Aggiornato', available:'Aggiornamento disponibile', refresh:'Aggiorna', camOff:'Fotocamera disattivata', chooseCam:'Scegli fotocamera', overlayUrl:'URL OVERLAY OBS', detection:'Riconoscimento visivo', detectionOff:'Rilevamento fermo', detectionOn:'Rilevamento automatico attivo', detecting:'Analisi della carta…', detected:'Carta rilevata', startDetection:'Attiva rilevamento', stopDetection:'Ferma rilevamento', scanNow:'Scansiona ora', detectionHelp:'Tieni la carta dritta e abbastanza vicina alla fotocamera, con il nome ben visibile.', onePiece:'API One Piece', save:'Salva', autoOverlay:'Mostra automaticamente la carta rilevata in OBS' }
 };
+
+
+
+const TCG_OPTIONS = [
+  ['ygo','Yu-Gi-Oh!'],
+  ['pokemon','Pokémon'],
+  ['onepiece','One Piece'],
+  ['vanguard','Cardfight!! Vanguard'],
+  ['naruto','Naruto Mythos'],
+  ['magic','Magic: The Gathering'],
+  ['lorcana','Disney Lorcana'],
+  ['digimon','Digimon'],
+  ['dragonball','Dragon Ball Super'],
+  ['unionarena','Union Arena'],
+  ['weiss','Weiss Schwarz'],
+  ['fleshblood','Flesh and Blood']
+];
+
+const TCG_LABEL = Object.fromEntries(TCG_OPTIONS);
 
 function fmtCount(n){ if(n == null) return '—'; return new Intl.NumberFormat().format(n); }
 function cleanOcrText(text){
@@ -95,6 +115,8 @@ export default function App(){
   const [lastOcr,setLastOcr] = useState('');
   const [lastDetected,setLastDetected] = useState('');
   const [autoOverlay,setAutoOverlay] = useState(localStorage.getItem('auto_overlay') === '1');
+  const [selectedTcg,setSelectedTcg] = useState(localStorage.getItem('scan_tcg') || 'ygo');
+  const [scanConfidence,setScanConfidence] = useState(0);
   const [booting,setBooting] = useState(true);
   const [bootProgress,setBootProgress] = useState(0);
   const [bootStatus,setBootStatus] = useState('Initialisation…');
@@ -217,6 +239,7 @@ export default function App(){
 
   useEffect(()=>{ localStorage.setItem('tcg_lang',lang); },[lang]);
   useEffect(()=>{ localStorage.setItem('auto_overlay',autoOverlay?'1':'0'); },[autoOverlay]);
+  useEffect(()=>{ localStorage.setItem('scan_tcg',selectedTcg); setLastOcr(''); setLastDetected(''); },[selectedTcg]);
 
   async function refreshApis(){
     const url=localStorage.getItem('onepiece_url')||'';
@@ -293,7 +316,7 @@ export default function App(){
 
   async function showCardOnOverlay(target=card){
     if(!target) return;
-    await invoke('set_overlay_card',{card:{visible:true,name:target.name,subtitle:[target.card_type,target.attribute,target.race].filter(Boolean).join(' • '),image_url:target.image_url,atk:target.atk,def:target.def,badge:'YU-GI-OH!'}});
+    await invoke('set_overlay_card',{card:{visible:true,name:target.name,subtitle:[target.card_type,target.attribute,target.race].filter(Boolean).join(' • '),image_url:target.image_url,atk:target.atk,def:target.def,badge:(TCG_LABEL[selectedTcg] || 'TCG').toUpperCase()}});
   }
 
   async function showOnOverlay(){ if(!card) return; await showCardOnOverlay(card); setToast('Overlay mis à jour'); }
@@ -311,115 +334,159 @@ export default function App(){
     return workerRef.current;
   }
 
-  function captureNameStrip(){
+  function getCardRect(video){
+    const sourceW=video.videoWidth, sourceH=video.videoHeight;
+    const cardW=Math.floor(sourceW*0.54);
+    const cardH=Math.floor(Math.min(sourceH*0.82, cardW*1.45));
+    return {
+      x:Math.floor((sourceW-cardW)/2),
+      y:Math.floor((sourceH-cardH)/2),
+      w:cardW,
+      h:cardH
+    };
+  }
+
+  function captureZone(kind){
     const video=videoRef.current;
     if(!video || !video.videoWidth || !video.videoHeight) throw new Error('La caméra n’est pas prête');
-    const sourceW=video.videoWidth, sourceH=video.videoHeight;
-    const cardW=Math.floor(sourceW*0.62);
-    const cardH=Math.floor(Math.min(sourceH*0.88, cardW*1.45));
-    const x=Math.floor((sourceW-cardW)/2);
-    const y=Math.floor((sourceH-cardH)/2);
-    const nameH=Math.max(80,Math.floor(cardH*0.18));
+    const r=getCardRect(video);
+    let zx=r.x, zy=r.y, zw=r.w, zh=r.h;
+
+    if(kind==='bottom-left'){
+      zx=r.x; zy=r.y+Math.floor(r.h*.65); zw=Math.floor(r.w*.62); zh=Math.floor(r.h*.35);
+    }else if(kind==='bottom-right'){
+      zx=r.x+Math.floor(r.w*.34); zy=r.y+Math.floor(r.h*.65); zw=Math.floor(r.w*.66); zh=Math.floor(r.h*.35);
+    }else if(kind==='naruto-number'){
+      zx=r.x; zy=r.y+Math.floor(r.h*.72); zw=Math.floor(r.w*.55); zh=Math.floor(r.h*.28);
+    }else if(kind==='naruto-edition'){
+      zx=r.x+Math.floor(r.w*.48); zy=r.y+Math.floor(r.h*.72); zw=Math.floor(r.w*.52); zh=Math.floor(r.h*.28);
+    }
+
     const canvas=document.createElement('canvas');
     canvas.width=1200;
-    canvas.height=Math.max(180,Math.round(nameH*(1200/cardW)));
+    canvas.height=Math.max(220,Math.round(zh*(1200/zw)));
     const ctx=canvas.getContext('2d',{willReadFrequently:true});
-    ctx.drawImage(video,x,y,cardW,nameH,0,0,canvas.width,canvas.height);
+    ctx.drawImage(video,zx,zy,zw,zh,0,0,canvas.width,canvas.height);
+
     const img=ctx.getImageData(0,0,canvas.width,canvas.height);
     const d=img.data;
     for(let i=0;i<d.length;i+=4){
-      const g=Math.round(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114);
-      const boosted=g<125?Math.max(0,g-28):Math.min(255,g+38);
-      d[i]=d[i+1]=d[i+2]=boosted;
+      const g=Math.round(d[i]*.299+d[i+1]*.587+d[i+2]*.114);
+      const v=g<135?Math.max(0,g-38):Math.min(255,g+48);
+      d[i]=d[i+1]=d[i+2]=v;
     }
     ctx.putImageData(img,0,0);
     return canvas;
   }
 
+  async function recognizeZone(worker,kind,whitelist){
+    if(whitelist){
+      await worker.setParameters({
+        tessedit_char_whitelist:whitelist,
+        preserve_interword_spaces:'1'
+      });
+    }
+    const result=await worker.recognize(captureZone(kind));
+    return {
+      text:String(result?.data?.text || '').trim(),
+      confidence:Number(result?.data?.confidence || 0)
+    };
+  }
+
+  function makeNarutoCard(entry, editionText=''){
+    const first=/1ST|1RE|1ERE|1ÈRE|FIRST/i.test(editionText);
+    return {
+      name:entry.title || entry.name,
+      description:`Naruto Mythos • ${entry.set} • ${entry.number}${first?' • 1ère édition':''}`,
+      card_type:'Naruto Mythos',
+      attribute:first?'1ère édition':'Édition non confirmée',
+      race:entry.set_code,
+      atk:null,
+      def:null,
+      image_url:'',
+      source:'Base locale Naruto Mythos'
+    };
+  }
+
+  async function acceptLowConfidence(label,confidence){
+    if(confidence>=85) return true;
+    return window.confirm(`Confiance OCR ${Math.round(confidence)}%\n\nRésultat détecté : ${label}\n\nConfirmer cette carte ?`);
+  }
+
   async function scanCameraCard(){
     if(!cameraOn || detectingRef.current) return;
-
-    detectingRef.current = true;
+    detectingRef.current=true;
     setDetecting(true);
+    setLastDetected('');
 
     try{
-      const worker = await getVisionWorker();
-      const canvas = captureNameStrip();
-      const result = await worker.recognize(canvas);
+      const worker=await getVisionWorker();
+      let found=null;
+      let detectedCode='';
+      let confidence=0;
 
-      const confidence = Number(result?.data?.confidence || 0);
-      const raw = cleanOcrText(result?.data?.text);
-      setLastOcr(raw ? `${raw} • ${Math.round(confidence)}%` : '—');
-
-      if(!raw || raw.length < 4 || confidence < 42){
-        setLastDetected('');
-        return;
+      if(selectedTcg==='ygo'){
+        const ocr=await recognizeZone(worker,'bottom-left','0123456789');
+        confidence=ocr.confidence;
+        const digits=ocr.text.replace(/\D/g,'');
+        const match=digits.match(/\d{8}/);
+        detectedCode=match?.[0] || '';
+        setLastOcr(`${detectedCode || cleanOcrText(ocr.text) || '—'} • ${Math.round(confidence)}%`);
+        if(!/^\d{8}$/.test(detectedCode)) throw new Error('Passcode Yu-Gi-Oh! de 8 chiffres non reconnu en bas à gauche.');
+        if(!(await acceptLowConfidence(detectedCode,confidence))) return;
+        found=await invoke('search_ygo_by_id',{passcode:detectedCode});
+      }
+      else if(selectedTcg==='vanguard'){
+        const ocr=await recognizeZone(worker,'bottom-right','ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/');
+        confidence=ocr.confidence;
+        const normalized=ocr.text.toUpperCase().replace(/\s+/g,'');
+        const match=normalized.match(/[A-Z]-[A-Z0-9]+\/[A-Z0-9-]+(?:EN)?/);
+        detectedCode=match?.[0] || '';
+        setLastOcr(`${detectedCode || cleanOcrText(ocr.text) || '—'} • ${Math.round(confidence)}%`);
+        if(!detectedCode) throw new Error('Code Vanguard non reconnu en bas à droite. Exemple attendu : D-BT01/001EN');
+        if(!(await acceptLowConfidence(detectedCode,confidence))) return;
+        found=await invoke('search_vanguard_by_code',{code:detectedCode});
+      }
+      else if(selectedTcg==='naruto'){
+        const left=await recognizeZone(worker,'naruto-number','0123456789/');
+        const right=await recognizeZone(worker,'naruto-edition','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789èéÈÉ');
+        confidence=Math.min(left.confidence || 0, Math.max(right.confidence || 0, left.confidence || 0));
+        const compact=left.text.replace(/\s+/g,'');
+        const m=compact.match(/(\d{1,3})\/130/);
+        detectedCode=m?`${Number(m[1])}/130`:'';
+        setLastOcr(`${detectedCode || cleanOcrText(left.text) || '—'} • ${Math.round(left.confidence)}% | ${cleanOcrText(right.text) || 'édition ?'}`);
+        if(!m) throw new Error('Numéro Naruto Mythos non reconnu en bas à gauche. Exemple attendu : 125/130');
+        const idx=Number(m[1]);
+        const entry=narutoSet1.find(x=>x.index===idx);
+        if(!entry) throw new Error(`Carte ${idx}/130 absente de la base locale.`);
+        if(!(await acceptLowConfidence(`${entry.title} (${idx}/130)`,left.confidence))) return;
+        found=makeNarutoCard(entry,right.text);
+      }
+      else {
+        throw new Error(`Scanner dédié ${TCG_LABEL[selectedTcg] || selectedTcg} pas encore configuré. Choisis YGO, Vanguard ou Naruto Mythos.`);
       }
 
-      const lines = String(result?.data?.text || '')
-        .split(/\r?\n/)
-        .map(cleanOcrText)
-        .filter(x => x.length >= 4 && /[A-Za-zÀ-ÿ]/.test(x));
-
-      const attempts=[];
-      for(const line of lines){
-        if(!attempts.includes(line)) attempts.push(line);
-      }
-      if(!attempts.includes(raw)) attempts.push(raw);
-
-      let best=null;
-      let bestScore=0;
-
-      for(const candidate of attempts.slice(0,4)){
-        const found = await searchCard(null,candidate);
-        if(!found) continue;
-
-        const score = similarity(candidate,found.name);
-        if(score > bestScore){
-          bestScore=score;
-          best=found;
-        }
-      }
-
-      if(!best || bestScore < 0.58){
-        setLastDetected('');
-        return;
-      }
-
-      setCard(best);
-      setQuery(best.name);
-      setLastDetected(`${best.name} • ${Math.round(bestScore*100)}%`);
-
-      if(lastDetectedRef.current !== best.name){
-        lastDetectedRef.current = best.name;
-        setToast(`${tr.detected} : ${best.name}`);
-
-        if(autoOverlay){
-          await showCardOnOverlay(best);
-        }
-      }
+      if(!found) throw new Error('Carte non reconnue.');
+      setScanConfidence(Math.round(confidence));
+      setCard(found);
+      setQuery(found.name || detectedCode);
+      setLastDetected(`${found.name || detectedCode} • ${Math.round(confidence)}%`);
+      setToast(`${tr.detected} : ${found.name || detectedCode}`);
+      if(autoOverlay) await showCardOnOverlay(found);
     }catch(e){
       console.warn('Vision:',e);
-      setLastOcr('Erreur OCR');
-      setLastDetected('');
+      setToast(String(e));
+      if(!lastOcr) setLastOcr('Aucun code valide');
     }finally{
       detectingRef.current=false;
       setDetecting(false);
     }
   }
 
-  async function startDetection(){
-    if(!cameraOn){ await startCamera(); }
-    setDetectionOn(true);
-    clearInterval(detectionTimerRef.current);
-    setTimeout(scanCameraCard,1200);
-    detectionTimerRef.current=setInterval(scanCameraCard,4500);
-  }
-
   function stopDetection(){
-    setDetectionOn(false);
     clearInterval(detectionTimerRef.current);
     detectionTimerRef.current=null;
+    setDetectionOn(false);
   }
 
   function persistProfile(next=profile){
@@ -441,13 +508,7 @@ export default function App(){
   useEffect(()=>{ if(!toast) return; const id=setTimeout(()=>setToast(''),3000); return()=>clearTimeout(id); },[toast]);
 
   if(!booting && wizardOpen){
-    const tcgOptions=[
-      ['ygo','Yu-Gi-Oh!'],
-      ['onepiece','One Piece'],
-      ['pokemon','Pokémon'],
-      ['magic','Magic'],
-      ['vanguard','Vanguard']
-    ];
+    const tcgOptions=TCG_OPTIONS;
 
     return (
       <div className="wizard-screen">
@@ -549,11 +610,11 @@ export default function App(){
 
   return <div className="app">
     <header className="topbar">
-      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.9</span></div></div>
+      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.11</span></div></div>
       <div className="user"><strong>Quentin</strong><span>● LIVE READY</span></div>
       <div className="top-actions">
         <select value={lang} onChange={e=>setLang(e.target.value)}><option value="fr">FR</option><option value="en">EN</option><option value="es">ES</option><option value="it">IT</option></select>
-        <button className="mode">◆ YGO</button>
+        <button className="mode">◆ {TCG_LABEL[selectedTcg] || selectedTcg}</button>
         <button className="iconbtn" onClick={()=>setSettingsOpen(true)}>⚙</button>
       </div>
     </header>
@@ -561,7 +622,7 @@ export default function App(){
     <main className="layout">
       <section className="leftcol">
         <div className="panel">
-          <div className="panel-title"><span>▱ {tr.overlays}</span><span className="chip">YGO</span></div>
+          <div className="panel-title"><span>▱ {tr.overlays}</span><span className="chip">{TCG_LABEL[selectedTcg] || selectedTcg}</span></div>
           {['Cam Frame','Card Pop','Chat Box'].map((x,i)=><div className="toggle-row" key={x}><div><b>{x}</b><small>{i===0?'Cadre caméra':i===1?'Carte détectée':'Zone chat'}</small></div><span className="switch on"></span></div>)}
           <div className="toggle-row disabled"><div><b>Alert Box</b><small>Follow / Sub</small></div><span className="switch"></span></div>
         </div>
@@ -577,7 +638,7 @@ export default function App(){
       <section className="centercol">
         <div className="camera-panel">
           <div className="live-badge"><i></i> LIVE</div>
-          <div className={detectionOn?'vision-guide active':'vision-guide'}><span>ZONE CARTE</span></div>
+          <div className={cameraOn?'vision-guide active':'vision-guide'}><span>{selectedTcg==='ygo'?'PASSCODE BAS GAUCHE':selectedTcg==='vanguard'?'CODE BAS DROITE':selectedTcg==='naruto'?'NUMÉRO + ÉDITION':'ZONE CARTE'}</span></div>
           <video ref={videoRef} className={cameraOn?'camera-video':'camera-video hidden'} playsInline muted />
           {!cameraOn && <div className="camera-empty"><div className="cam-icon">◉</div><h3>{tr.camOff}</h3><button className="primary" onClick={()=>startCamera()}>Activer la caméra</button></div>}
           <div className="camera-bottom"><span>● {cameraOn?`LIVE • ${camFps || '—'} FPS`:'OFFLINE'}</span><div className="cam-actions">
@@ -587,14 +648,14 @@ export default function App(){
         </div>
 
         <form className="searchbar" onSubmit={searchCard}>
-          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder={tr.search}/>
-          <button className="primary" disabled={searching}>{searching?'…':'Rechercher'}</button>
+          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder={selectedTcg==='ygo'?tr.search:'Recherche manuelle YGO uniquement'} disabled={selectedTcg!=='ygo'}/>
+          <button className="primary" disabled={searching || selectedTcg!=='ygo'}>{searching?'…':'Rechercher'}</button>
         </form>
 
         <div className="card-panel">
           {card ? <>
             <div className="card-art">{card.image_url?<img src={card.image_url} alt=""/>:<span>CARTE</span>}</div>
-            <div className="card-info"><div className="goldline">♛ YU-GI-OH! • LIVE API</div><h1>{card.name}</h1><div className="stats"><span>ATK {card.atk ?? '—'}</span><span>DEF {card.def ?? '—'}</span></div><p>{card.description?.slice(0,240)}{card.description?.length>240?'…':''}</p><small>{card.card_type} • {card.attribute} • {card.race}</small><div className="actions"><button className="primary" onClick={showOnOverlay} type="button">{tr.send}</button><button className="ghost" onClick={hideOverlay} type="button">{tr.hide}</button></div></div>
+            <div className="card-info"><div className="goldline">♛ {TCG_LABEL[selectedTcg] || 'TCG'} • DÉTECTION PAR CODE</div><h1>{card.name}</h1><div className="stats"><span>{card.atk!=null?`ATK ${card.atk}`:(card.card_type || 'CARTE')}</span><span>{card.def!=null?`DEF ${card.def}`:(card.attribute || 'IDENTIFIÉE')}</span></div><p>{card.description?.slice(0,240)}{card.description?.length>240?'…':''}</p><small>{card.card_type} • {card.attribute} • {card.race}</small><div className="actions"><button className="primary" onClick={showOnOverlay} type="button">{tr.send}</button><button className="ghost" onClick={hideOverlay} type="button">{tr.hide}</button></div></div>
           </> : <div className="empty-card">Recherchez ou scannez une carte pour l’afficher ici et sur votre overlay OBS.</div>}
         </div>
       </section>
@@ -612,15 +673,17 @@ export default function App(){
           <small>OBS → Source navigateur → 1920 × 1080. Le lien fonctionne uniquement pendant que TCG STREAM TOOL est ouvert.</small>
         </div>
         <div className="panel vision-panel">
-          <div className="panel-title">⌁ {tr.detection}</div>
-          <div className={detectionOn?'vision-status on':'vision-status'}><i className={detectionOn?'dot ok':'dot'}></i>{detecting?tr.detecting:(detectionOn?tr.detectionOn:tr.detectionOff)}</div>
-          <div className="vision-buttons">
-            <button className={detectionOn?'ghost':'primary'} onClick={detectionOn?stopDetection:startDetection}>{detectionOn?tr.stopDetection:tr.startDetection}</button>
-            <button className="ghost" disabled={!cameraOn || detecting} onClick={scanCameraCard}>{tr.scanNow}</button>
-          </div>
+          <div className="panel-title">⌁ SCANNER UNE CARTE</div>
+          <label className="scan-tcg-label">TCG À SCANNER
+            <select className="scan-tcg-select" value={selectedTcg} onChange={e=>setSelectedTcg(e.target.value)}>
+              {TCG_OPTIONS.map(([id,name])=><option key={id} value={id}>{name}</option>)}
+            </select>
+          </label>
+          <div className={detecting?'vision-status on':'vision-status'}><i className={detecting?'dot ok':'dot'}></i>{detecting?'Analyse du code…':'Prêt — détection manuelle uniquement'}</div>
+          <button className="primary full scan-main" disabled={!cameraOn || detecting} onClick={scanCameraCard}>{detecting?'Analyse…':'SCANNER'}</button>
           <label className="checkline"><input type="checkbox" checked={autoOverlay} onChange={e=>setAutoOverlay(e.target.checked)}/><span>{tr.autoOverlay}</span></label>
-          <small>{tr.detectionHelp}</small>
-          <div className="ocr-box"><span>OCR</span><b>{lastOcr || '—'}</b></div>
+          <small>{selectedTcg==='ygo'?'YGO : lit uniquement le passcode de 8 chiffres en bas à gauche.':selectedTcg==='vanguard'?'Vanguard : lit le code en bas à droite, ex. D-BT01/001EN.':selectedTcg==='naruto'?'Naruto Mythos : lit le numéro x/130 à gauche et l’édition à droite.':'Ce TCG est sélectionnable mais son scanner dédié sera ajouté sans utiliser de recherche aléatoire.'}</small>
+          <div className="ocr-box"><span>OCR / CODE</span><b>{lastOcr || '—'}</b></div>
           {lastDetected && <div className="detected-box"><span>{tr.detected}</span><b>{lastDetected}</b></div>}
         </div>
         <div className="panel">
@@ -635,6 +698,7 @@ export default function App(){
       <label>Nom de streamer<input value={profile.streamer} onChange={e=>setProfile({...profile,streamer:e.target.value})}/></label>
       <label>Nom de chaîne<input value={profile.channel} onChange={e=>setProfile({...profile,channel:e.target.value})}/></label>
       <label>Plateforme<select value={profile.platform} onChange={e=>setProfile({...profile,platform:e.target.value})}><option value="twitch">Twitch</option><option value="youtube">YouTube</option><option value="tiktok">TikTok</option><option value="other">Autre</option></select></label>
+      <label>TCG par défaut<select value={selectedTcg} onChange={e=>setSelectedTcg(e.target.value)}>{TCG_OPTIONS.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>
       <label>{tr.onePiece} URL<input value={onePieceUrl} onChange={e=>setOnePieceUrl(e.target.value)} placeholder="Laisser vide pour la source par défaut"/></label>
       <label>API key<input type="password" value={onePieceKey} onChange={e=>setOnePieceKey(e.target.value)} placeholder="Optionnel"/></label>
       <p>Les réglages du profil restent enregistrés localement. Tu peux aussi relancer l'assistant complet.</p>
