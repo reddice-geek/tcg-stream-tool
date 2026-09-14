@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
     sync::{Arc, Mutex},
     thread,
@@ -53,6 +53,13 @@ pub struct CardResult {
     pub level: Option<i64>,
     pub attribute: String,
     pub race: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UniversalScanResult {
+    pub card: CardResult,
+    pub score: f64,
+    pub product_id: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -128,296 +135,83 @@ fn set_overlay_card(shared: State<'_, OverlayShared>, card: OverlayCard) -> Resu
 
 #[tauri::command]
 async fn api_status(game: String, _api_url: Option<String>, _api_key: Option<String>) -> ApiStatus {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.13")
-        .build()
-        .unwrap_or_default();
-
     let start = Instant::now();
 
-    async fn send_json(
-        client: &reqwest::Client,
-        url: &str,
-        api_key: Option<String>,
-    ) -> Result<(reqwest::StatusCode, Value), String> {
-        let mut req = client.get(url);
-        if let Some(key) = api_key.filter(|s| !s.trim().is_empty()) {
-            req = req.header("X-API-Key", key);
-        }
-        let resp = req.send().await.map_err(|e| e.to_string())?;
-        let status = resp.status();
-        let json = resp.json::<Value>().await.unwrap_or(Value::Null);
-        Ok((status, json))
-    }
-
-    match game.as_str() {
-        "ygo" => {
-            let url = "https://db.ygoprodeck.com/api/v7/cardinfo.php?num=1&offset=0";
-            match send_json(&client, url, None).await {
-                Ok((status, json)) if status.is_success() => {
-                    let count = json.pointer("/meta/total_rows").and_then(Value::as_u64);
-                    ApiStatus {
-                        id: "ygo".into(),
-                        name: "YGOPRODeck".into(),
-                        connected: true,
-                        latency_ms: start.elapsed().as_millis(),
-                        count,
-                        detail: "YGOPRODeck API v7".into(),
-                    }
-                }
-                Ok((status, _)) => ApiStatus {
-                    id: "ygo".into(),
-                    name: "YGOPRODeck".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: format!("HTTP {}", status),
-                },
-                Err(e) => ApiStatus {
-                    id: "ygo".into(),
-                    name: "YGOPRODeck".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: e,
-                },
-            }
-        }
-
-        "pokemon" => {
-            // TCGdex v2: endpoint public et stable, sans clé API.
-            let url = "https://api.tcgdex.net/v2/fr/cards";
-            match send_json(&client, url, None).await {
-                Ok((status, json)) if status.is_success() => {
-                    let count = json.as_array().map(|a| a.len() as u64);
-                    ApiStatus {
-                        id: "pokemon".into(),
-                        name: "Pokémon TCG".into(),
-                        connected: true,
-                        latency_ms: start.elapsed().as_millis(),
-                        count,
-                        detail: "TCGdex Pokémon API v2".into(),
-                    }
-                }
-                Ok((status, _)) => ApiStatus {
-                    id: "pokemon".into(),
-                    name: "Pokémon TCG".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: format!("TCGdex HTTP {}", status),
-                },
-                Err(e) => ApiStatus {
-                    id: "pokemon".into(),
-                    name: "Pokémon TCG".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: e,
-                },
-            }
-        }
-
-        "onepiece" => {
-            // OPTCG API publique : aucune clé ni URL à configurer côté utilisateur.
-            let endpoints = [
-                "https://optcgapi.com/api/allSetCards/",
-                "https://optcgapi.com/api/allSTCards/",
-                "https://optcgapi.com/api/allPromoCards/",
-                "https://optcgapi.com/api/allDonCards/",
-            ];
-            let mut total: u64 = 0;
-            let mut ok = 0u8;
-            let mut last_error = String::new();
-            for url in endpoints {
-                match send_json(&client, url, None).await {
-                    Ok((status, json)) if status.is_success() => {
-                        if let Some(arr) = json.as_array() {
-                            total += arr.len() as u64;
-                            ok += 1;
-                        }
-                    }
-                    Ok((status, _)) => last_error = format!("HTTP {}", status),
-                    Err(e) => last_error = e,
-                }
-            }
-            ApiStatus {
-                id: "onepiece".into(),
-                name: "One Piece".into(),
-                connected: ok > 0,
-                latency_ms: start.elapsed().as_millis(),
-                count: if ok > 0 { Some(total) } else { None },
-                detail: if ok == 4 {
-                    "OPTCG API publique • cartes".into()
-                } else if ok > 0 {
-                    format!("OPTCG API partielle ({}/4)", ok)
-                } else {
-                    last_error
-                },
-            }
-        }
-
-        "magic" => {
-            let url = "https://api.scryfall.com/cards/search?q=%2A";
-            match send_json(&client, url, None).await {
-                Ok((status, json)) if status.is_success() => {
-                    let count = json.get("total_cards").and_then(Value::as_u64);
-                    ApiStatus {
-                        id: "magic".into(),
-                        name: "Magic / Scryfall".into(),
-                        connected: true,
-                        latency_ms: start.elapsed().as_millis(),
-                        count,
-                        detail: "Scryfall API".into(),
-                    }
-                }
-                Ok((status, _)) => ApiStatus {
-                    id: "magic".into(),
-                    name: "Magic / Scryfall".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: format!("HTTP {}", status),
-                },
-                Err(e) => ApiStatus {
-                    id: "magic".into(),
-                    name: "Magic / Scryfall".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: e,
-                },
-            }
-        }
-
-        "vanguard" => {
-            let url = "https://en.cf-vanguard.com/cardlist/cardsearch/";
-            match client.get(url).send().await {
-                Ok(resp) if resp.status().is_success() => ApiStatus {
-                    id: "vanguard".into(),
-                    name: "Cardfight!! Vanguard".into(),
-                    connected: true,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: "Cardlist officielle connectée".into(),
-                },
-                Ok(resp) => ApiStatus {
-                    id: "vanguard".into(),
-                    name: "Cardfight!! Vanguard".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: format!("HTTP {}", resp.status()),
-                },
-                Err(e) => ApiStatus {
-                    id: "vanguard".into(),
-                    name: "Cardfight!! Vanguard".into(),
-                    connected: false,
-                    latency_ms: start.elapsed().as_millis(),
-                    count: None,
-                    detail: e.to_string(),
-                },
-            }
-        }
-
-        "naruto" => ApiStatus {
+    if game == "naruto" {
+        return ApiStatus {
             id: "naruto".into(),
             name: "Naruto Mythos".into(),
             connected: true,
             latency_ms: start.elapsed().as_millis(),
             count: Some(130),
-            detail: "Base locale Set 1".into(),
-        },
+            detail: "Base locale Naruto Mythos Set 1".into(),
+        };
+    }
 
-        "lorcana" => {
-            // Catalogue complet Lorcana, public et sans authentification.
-            let url = "https://api.lorcana-api.com/bulk/cards";
-            match send_json(&client, url, None).await {
-                Ok((status, json)) if status.is_success() => {
-                    let count = json.as_array().map(|a| a.len() as u64);
-                    ApiStatus { id:"lorcana".into(), name:"Disney Lorcana".into(), connected:true, latency_ms:start.elapsed().as_millis(), count, detail:"Lorcana API publique".into() }
-                }
-                Ok((status,_)) => ApiStatus { id:"lorcana".into(), name:"Disney Lorcana".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("HTTP {}",status) },
-                Err(e) => ApiStatus { id:"lorcana".into(), name:"Disney Lorcana".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
-            }
-        }
-
-        "digimon" => {
-            let url = "https://digimoncard.io/api-public/getAllCards?series=Digimon%20Card%20Game&sort=card_number&sortdirection=asc";
-            match send_json(&client, url, None).await {
-                Ok((status, json)) if status.is_success() => {
-                    let count = json.as_array().map(|a| a.len() as u64);
-                    ApiStatus { id:"digimon".into(), name:"Digimon".into(), connected:true, latency_ms:start.elapsed().as_millis(), count, detail:"DigimonCard.io API".into() }
-                }
-                Ok((status,_)) => ApiStatus { id:"digimon".into(), name:"Digimon".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("HTTP {}",status) },
-                Err(e) => ApiStatus { id:"digimon".into(), name:"Digimon".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
-            }
-        }
-
-        "fleshblood" => {
-            let url = "https://api.goagain.dev/v1/cards?limit=1&offset=0";
-            match send_json(&client, url, None).await {
-                Ok((status, json)) if status.is_success() => {
-                    let count = json.get("total").and_then(Value::as_u64);
-                    ApiStatus { id:"fleshblood".into(), name:"Flesh and Blood".into(), connected:true, latency_ms:start.elapsed().as_millis(), count, detail:"goagain.dev API".into() }
-                }
-                Ok((status,_)) => ApiStatus { id:"fleshblood".into(), name:"Flesh and Blood".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("HTTP {}",status) },
-                Err(e) => ApiStatus { id:"fleshblood".into(), name:"Flesh and Blood".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
-            }
-        }
-
-        "dragonball" => {
-            // ApiTCG publie le catalogue Fusion World sur GitHub. On passe par
-            // l'API JSON publique de GitHub : aucune clé utilisateur nécessaire.
-            let url = "https://api.github.com/repos/apitcg/dragon-ball-fusion-tcg-data/contents/cards/en";
-            match send_json(&client, url, None).await {
-                Ok((status, _)) if status.is_success() => ApiStatus {
-                    id:"dragonball".into(), name:"Dragon Ball Super".into(), connected:true,
-                    latency_ms:start.elapsed().as_millis(), count:None,
-                    detail:"ApiTCG • catalogue public Fusion World".into()
-                },
-                Ok((status,_)) => ApiStatus { id:"dragonball".into(), name:"Dragon Ball Super".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("ApiTCG HTTP {}",status) },
-                Err(e) => ApiStatus { id:"dragonball".into(), name:"Dragon Ball Super".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
-            }
-        }
-
-        "unionarena" => {
-            let url = "https://api.github.com/repos/apitcg/union-arena-tcg-data/contents/cards/en";
-            match send_json(&client, url, None).await {
-                Ok((status, _)) if status.is_success() => ApiStatus {
-                    id:"unionarena".into(), name:"Union Arena".into(), connected:true,
-                    latency_ms:start.elapsed().as_millis(), count:None,
-                    detail:"ApiTCG • catalogue public Union Arena".into()
-                },
-                Ok((status,_)) => ApiStatus { id:"unionarena".into(), name:"Union Arena".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("ApiTCG HTTP {}",status) },
-                Err(e) => ApiStatus { id:"unionarena".into(), name:"Union Arena".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
-            }
-        }
-
-        "weiss" => {
-            // tcg-api.com expose une API publique pour Weiß Schwarz. Le endpoint
-            // racine sert ici de contrôle de disponibilité sans clé utilisateur.
-            let url = "https://www.tcg-api.com/";
-            match client.get(url).send().await {
-                Ok(resp) if resp.status().is_success() => ApiStatus {
-                    id:"weiss".into(), name:"Weiss Schwarz".into(), connected:true,
-                    latency_ms:start.elapsed().as_millis(), count:None,
-                    detail:"tcg-api.com • Weiß Schwarz public".into()
-                },
-                Ok(resp) => ApiStatus { id:"weiss".into(), name:"Weiss Schwarz".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("tcg-api.com HTTP {}",resp.status()) },
-                Err(e) => ApiStatus { id:"weiss".into(), name:"Weiss Schwarz".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e.to_string() },
-            }
-        }
-
-        _ => ApiStatus {
+    let Some((game_id, display_name)) = open_tcg_game(&game) else {
+        return ApiStatus {
             id: game,
             name: "API".into(),
             connected: false,
             latency_ms: 0,
             count: None,
             detail: "Source inconnue".into(),
-        },
+        };
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent("TCG-STREAM-TOOL/1.0.13")
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => return ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:0, count:None, detail:e.to_string() },
+    };
+
+    let url = "https://openapi.tcgtracking.com/v1/categories";
+    match client.get(url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            match resp.json::<Value>().await {
+                Ok(json) => {
+                    let entry = json.get("categories")
+                        .and_then(Value::as_array)
+                        .and_then(|arr| arr.iter().find(|x| x.get("id").and_then(Value::as_u64) == Some(game_id)));
+                    if let Some(cat) = entry {
+                        let count = cat.get("product_count").and_then(Value::as_u64);
+                        ApiStatus {
+                            id: game,
+                            name: display_name.into(),
+                            connected: true,
+                            latency_ms: start.elapsed().as_millis(),
+                            count,
+                            detail: "Open TCG API • catalogue utilisé par le scanner visuel".into(),
+                        }
+                    } else {
+                        ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:"Jeu absent du catalogue Open TCG".into() }
+                    }
+                }
+                Err(e) => ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e.to_string() },
+            }
+        }
+        Ok(resp) => ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("Open TCG HTTP {}",resp.status()) },
+        Err(e) => ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e.to_string() },
+    }
+}
+
+fn open_tcg_game(game: &str) -> Option<(u64, &'static str)> {
+    match game {
+        "magic" => Some((1, "Magic: The Gathering")),
+        "ygo" => Some((2, "Yu-Gi-Oh!")),
+        "pokemon" => Some((3, "Pokémon")),
+        "vanguard" => Some((16, "Cardfight!! Vanguard")),
+        "weiss" => Some((20, "Weiss Schwarz")),
+        "dragonball" => Some((27, "Dragon Ball Super")),
+        "fleshblood" => Some((62, "Flesh and Blood")),
+        "digimon" => Some((63, "Digimon")),
+        "onepiece" => Some((68, "One Piece")),
+        "lorcana" => Some((71, "Disney Lorcana")),
+        "unionarena" => Some((81, "Union Arena")),
+        _ => None,
     }
 }
 
@@ -454,6 +248,174 @@ fn strip_html(input: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+
+fn value_str<'a>(v: &'a Value, keys: &[&str]) -> &'a str {
+    for key in keys {
+        if let Some(s) = v.get(*key).and_then(Value::as_str) { return s; }
+    }
+    ""
+}
+
+fn norm(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn open_product_to_card(game: &str, root: &Value) -> CardResult {
+    let product = root.get("product").unwrap_or(root);
+    let id = product.get("number").and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| product.get("id").map(|v| v.to_string()))
+        .unwrap_or_default();
+    let name = value_str(product, &["name", "clean_name"]);
+    let set_name = value_str(product, &["set_name", "set"]);
+    let rarity = value_str(product, &["rarity"]);
+    let image = value_str(product, &["image_url", "image"]);
+    CardResult {
+        id,
+        name: if name.is_empty() { "Carte reconnue".into() } else { name.into() },
+        card_type: open_tcg_game(game).map(|x| x.1).unwrap_or("TCG").into(),
+        description: [set_name, rarity].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" • "),
+        image_url: image.into(),
+        atk: None,
+        def: None,
+        level: None,
+        attribute: rarity.into(),
+        race: set_name.into(),
+    }
+}
+
+#[tauri::command]
+async fn scan_open_tcg(game: String, image_data_url: String) -> Result<UniversalScanResult, String> {
+    let (game_id, _) = open_tcg_game(&game).ok_or_else(|| "Ce TCG n'est pas disponible dans le scanner visuel public".to_string())?;
+    if !image_data_url.starts_with("data:image/") { return Err("Image caméra invalide".into()); }
+    if image_data_url.len() > 140_000 { return Err("Image trop volumineuse pour le scanner public (100 Ko maximum)".into()); }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(22))
+        .user_agent("TCG-STREAM-TOOL/1.0.13")
+        .build().map_err(|e| e.to_string())?;
+
+    let scan = client.post("https://openapi.tcgtracking.com/v1/scan")
+        .json(&json!({"game_id":game_id,"limit":5,"image":image_data_url}))
+        .send().await.map_err(|e| format!("Scanner visuel indisponible : {}",e))?;
+    if !scan.status().is_success() { return Err(format!("Scanner visuel HTTP {}",scan.status())); }
+    let scan_json: Value = scan.json().await.map_err(|e| e.to_string())?;
+    let best = scan_json.get("results").and_then(Value::as_array).and_then(|a| a.first())
+        .ok_or_else(|| "Aucune correspondance visuelle trouvée pour cette carte".to_string())?;
+    let product_id = best.get("product_id").and_then(Value::as_u64)
+        .ok_or_else(|| "Réponse scanner sans identifiant produit".to_string())?;
+    let score = best.get("score").and_then(Value::as_f64)
+        .or_else(|| best.get("score").and_then(Value::as_u64).map(|x| x as f64)).unwrap_or(0.0);
+
+    let product_url = format!("https://openapi.tcgtracking.com/v1/products/{}", product_id);
+    let product_resp = client.get(product_url).send().await.map_err(|e| e.to_string())?;
+    if !product_resp.status().is_success() { return Err(format!("Fiche carte HTTP {}",product_resp.status())); }
+    let product_json: Value = product_resp.json().await.map_err(|e| e.to_string())?;
+    let card = open_product_to_card(&game, &product_json);
+    Ok(UniversalScanResult { card, score, product_id })
+}
+
+fn pokemon_card_from_value(card: &Value) -> CardResult {
+    let base = value_str(card, &["image"]);
+    let image_url = if base.is_empty() { String::new() } else { format!("{}/high.webp",base.trim_end_matches('/')) };
+    CardResult {
+        id: value_str(card, &["localId","id"]).into(),
+        name: value_str(card, &["name"]).into(),
+        card_type: value_str(card, &["category"]).into(),
+        description: value_str(card, &["effect","description"]).into(),
+        image_url,
+        atk: None, def: None,
+        level: card.get("level").and_then(Value::as_i64),
+        attribute: value_str(card, &["rarity"]).into(),
+        race: card.pointer("/set/name").and_then(Value::as_str).unwrap_or("").into(),
+    }
+}
+
+#[tauri::command]
+async fn search_card_universal(game: String, query: String, language: Option<String>) -> Result<CardResult, String> {
+    let q = query.trim();
+    if q.is_empty() { return Err("Saisissez un nom ou un numéro de carte".into()); }
+    if game == "ygo" { return search_ygo_card(q.into(), language).await; }
+    if game == "vanguard" { return search_vanguard_by_code(q.into()).await; }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(18))
+        .user_agent("TCG-STREAM-TOOL/1.0.13")
+        .build().map_err(|e| e.to_string())?;
+    let nq = norm(q);
+
+    match game.as_str() {
+        "pokemon" => {
+            let lang = if language.as_deref()==Some("fr") { "fr" } else { "en" };
+            let list_url = format!("https://api.tcgdex.net/v2/{}/cards",lang);
+            let list: Value = client.get(list_url).send().await.map_err(|e|e.to_string())?.json().await.map_err(|e|e.to_string())?;
+            let card = list.as_array().and_then(|a| a.iter().find(|c| {
+                let name=norm(value_str(c,&["name"])); let id=norm(value_str(c,&["id","localId"]));
+                name==nq || id==nq || name.contains(&nq) || id.contains(&nq)
+            })).ok_or_else(|| format!("Aucune carte Pokémon trouvée pour « {} »",q))?;
+            let cid=value_str(card,&["id"]);
+            let detail_url=format!("https://api.tcgdex.net/v2/{}/cards/{}",lang,urlencoding::encode(cid));
+            let detail:Value=client.get(detail_url).send().await.map_err(|e|e.to_string())?.json().await.map_err(|e|e.to_string())?;
+            Ok(pokemon_card_from_value(&detail))
+        }
+        "magic" => {
+            let url=format!("https://api.scryfall.com/cards/named?fuzzy={}",urlencoding::encode(q));
+            let resp=client.get(url).send().await.map_err(|e|e.to_string())?;
+            if !resp.status().is_success(){ return Err("Carte Magic introuvable".into()); }
+            let v:Value=resp.json().await.map_err(|e|e.to_string())?;
+            let img=v.pointer("/image_uris/normal").and_then(Value::as_str)
+                .or_else(||v.pointer("/card_faces/0/image_uris/normal").and_then(Value::as_str)).unwrap_or("");
+            Ok(CardResult{id:value_str(&v,&["collector_number","id"]).into(),name:value_str(&v,&["name"]).into(),card_type:value_str(&v,&["type_line"]).into(),description:value_str(&v,&["oracle_text"]).into(),image_url:img.into(),atk:None,def:None,level:None,attribute:value_str(&v,&["rarity"]).into(),race:v.pointer("/set_name").and_then(Value::as_str).unwrap_or("").into()})
+        }
+        "digimon" => {
+            let is_code=q.chars().any(|c|c.is_ascii_digit()) && q.contains('-');
+            let url=if is_code { format!("https://digimoncard.io/api-public/search?card={}&series=Digimon%20Card%20Game&limit=1",urlencoding::encode(q)) } else { format!("https://digimoncard.io/api-public/search?n={}&series=Digimon%20Card%20Game&limit=1",urlencoding::encode(q)) };
+            let v:Value=client.get(url).send().await.map_err(|e|e.to_string())?.json().await.map_err(|e|e.to_string())?;
+            let c=v.as_array().and_then(|a|a.first()).ok_or_else(||"Carte Digimon introuvable".to_string())?;
+            Ok(CardResult{id:value_str(c,&["id"]).into(),name:value_str(c,&["name"]).into(),card_type:value_str(c,&["type"]).into(),description:value_str(c,&["main_effect","source_effect"]).into(),image_url:String::new(),atk:c.get("dp").and_then(Value::as_i64),def:None,level:c.get("level").and_then(Value::as_i64),attribute:value_str(c,&["color","rarity"]).into(),race:value_str(c,&["digi_type","set_name"]).into()})
+        }
+        "fleshblood" => {
+            let url=format!("https://api.goagain.dev/v1/cards?name={}&limit=1&offset=0",urlencoding::encode(q));
+            let v:Value=client.get(url).send().await.map_err(|e|e.to_string())?.json().await.map_err(|e|e.to_string())?;
+            let c=v.get("data").and_then(Value::as_array).and_then(|a|a.first()).ok_or_else(||"Carte Flesh and Blood introuvable".to_string())?;
+            let printing=c.get("printings").and_then(Value::as_array).and_then(|a|a.first());
+            let img=printing.and_then(|p|p.get("image_url")).and_then(Value::as_str).unwrap_or("");
+            let cid=printing.and_then(|p|p.get("id")).and_then(Value::as_str).unwrap_or_else(||value_str(c,&["unique_id"]));
+            Ok(CardResult{id:cid.into(),name:value_str(c,&["name"]).into(),card_type:value_str(c,&["type_text"]).into(),description:value_str(c,&["functional_text_plain","functional_text"]).into(),image_url:img.into(),atk:c.get("power").and_then(Value::as_str).and_then(|s|s.parse().ok()),def:c.get("defense").and_then(Value::as_str).and_then(|s|s.parse().ok()),level:None,attribute:value_str(c,&["color"]).into(),race:printing.and_then(|p|p.get("set_id")).and_then(Value::as_str).unwrap_or("").into()})
+        }
+        "onepiece" => {
+            for endpoint in ["allSetCards","allSTCards","allPromoCards","allDonCards"] {
+                let url=format!("https://optcgapi.com/api/{}/",endpoint);
+                let v:Value=client.get(url).send().await.map_err(|e|e.to_string())?.json().await.map_err(|e|e.to_string())?;
+                if let Some(c)=v.as_array().and_then(|a|a.iter().find(|c| {
+                    let name=norm(value_str(c,&["card_name","name"]));
+                    let id=norm(value_str(c,&["card_set_id","card_id","card_number","id"]));
+                    name==nq || id==nq || name.contains(&nq) || id.contains(&nq)
+                })) {
+                    return Ok(CardResult{id:value_str(c,&["card_set_id","card_id","card_number","id"]).into(),name:value_str(c,&["card_name","name"]).into(),card_type:value_str(c,&["card_type","type"]).into(),description:value_str(c,&["card_text","effect","description"]).into(),image_url:value_str(c,&["card_image","card_image_url","image_url","image"]).into(),atk:c.get("card_power").and_then(Value::as_i64).or_else(||c.get("power").and_then(Value::as_i64)),def:None,level:None,attribute:value_str(c,&["card_color","color","rarity"]).into(),race:value_str(c,&["set_name","card_set_name"]).into()});
+                }
+            }
+            Err("Carte One Piece introuvable".into())
+        }
+        "lorcana" => {
+            let v:Value=client.get("https://api.lorcana-api.com/bulk/cards").send().await.map_err(|e|e.to_string())?.json().await.map_err(|e|e.to_string())?;
+            let c=v.as_array().and_then(|a|a.iter().find(|c| {
+                let name=norm(value_str(c,&["Name","name","FullName","full_name"]));
+                let id=norm(value_str(c,&["Card_Num","card_num","number","id"]));
+                name==nq || id==nq || name.contains(&nq) || id.contains(&nq)
+            })).ok_or_else(||"Carte Lorcana introuvable".to_string())?;
+            Ok(CardResult{id:value_str(c,&["Card_Num","card_num","number","id"]).into(),name:value_str(c,&["Name","name","FullName","full_name"]).into(),card_type:value_str(c,&["Type","type"]).into(),description:value_str(c,&["Body_Text","body_text","Text","text"]).into(),image_url:value_str(c,&["Image","image","ImageUrl","image_url"]).into(),atk:None,def:None,level:None,attribute:value_str(c,&["Color","color","Rarity","rarity"]).into(),race:value_str(c,&["Set_Name","set_name"]).into()})
+        }
+        _ => Err(format!("Recherche texte directe indisponible pour {}. Le scanner caméra universel fonctionne pour ce TCG et récupère nom, numéro et image.", open_tcg_game(&game).map(|x|x.1).unwrap_or(&game))),
+    }
 }
 
 #[tauri::command]
@@ -591,6 +553,8 @@ pub fn run() {
             search_ygo_card,
             search_ygo_by_id,
             search_vanguard_by_code,
+            search_card_universal,
+            scan_open_tcg,
             check_latest_release,
             get_install_language
         ])
