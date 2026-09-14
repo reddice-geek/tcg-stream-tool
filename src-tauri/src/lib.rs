@@ -127,10 +127,10 @@ fn set_overlay_card(shared: State<'_, OverlayShared>, card: OverlayCard) -> Resu
 }
 
 #[tauri::command]
-async fn api_status(game: String, api_url: Option<String>, api_key: Option<String>) -> ApiStatus {
+async fn api_status(game: String, _api_url: Option<String>, _api_key: Option<String>) -> ApiStatus {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.12")
+        .user_agent("TCG-STREAM-TOOL/1.0.13")
         .build()
         .unwrap_or_default();
 
@@ -220,44 +220,41 @@ async fn api_status(game: String, api_url: Option<String>, api_key: Option<Strin
         }
 
         "onepiece" => {
-            // Une URL personnalisée continue d'être supportée. Sans URL, on compte
-            // les cartes de sets, starters et promos au lieu de compter les sets.
-            if let Some(custom_url) = api_url.as_deref().filter(|s| !s.trim().is_empty()) {
-                match send_json(&client, custom_url, api_key).await {
+            // OPTCG API publique : aucune clé ni URL à configurer côté utilisateur.
+            let endpoints = [
+                "https://optcgapi.com/api/allSetCards/",
+                "https://optcgapi.com/api/allSTCards/",
+                "https://optcgapi.com/api/allPromoCards/",
+                "https://optcgapi.com/api/allDonCards/",
+            ];
+            let mut total: u64 = 0;
+            let mut ok = 0u8;
+            let mut last_error = String::new();
+            for url in endpoints {
+                match send_json(&client, url, None).await {
                     Ok((status, json)) if status.is_success() => {
-                        let count = json.as_array().map(|a| a.len() as u64)
-                            .or_else(|| json.get("count").and_then(Value::as_u64))
-                            .or_else(|| json.get("total").and_then(Value::as_u64))
-                            .or_else(|| json.get("totalCount").and_then(Value::as_u64));
-                        ApiStatus { id:"onepiece".into(), name:"One Piece".into(), connected:true, latency_ms:start.elapsed().as_millis(), count, detail:"API personnalisée".into() }
-                    }
-                    Ok((status, _)) => ApiStatus { id:"onepiece".into(), name:"One Piece".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("HTTP {}", status) },
-                    Err(e) => ApiStatus { id:"onepiece".into(), name:"One Piece".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
-                }
-            } else {
-                let endpoints = [
-                    "https://optcgapi.com/api/allSetCards/",
-                    "https://optcgapi.com/api/allSTCards/",
-                    "https://optcgapi.com/api/allPromoCards/",
-                ];
-                let mut total: u64 = 0;
-                let mut ok = 0u8;
-                let mut last_error = String::new();
-                for url in endpoints {
-                    match send_json(&client, url, None).await {
-                        Ok((status, json)) if status.is_success() => {
-                            if let Some(arr) = json.as_array() { total += arr.len() as u64; ok += 1; }
+                        if let Some(arr) = json.as_array() {
+                            total += arr.len() as u64;
+                            ok += 1;
                         }
-                        Ok((status, _)) => last_error = format!("HTTP {}", status),
-                        Err(e) => last_error = e,
                     }
+                    Ok((status, _)) => last_error = format!("HTTP {}", status),
+                    Err(e) => last_error = e,
                 }
-                ApiStatus {
-                    id:"onepiece".into(), name:"One Piece".into(), connected:ok > 0,
-                    latency_ms:start.elapsed().as_millis(),
-                    count: if ok > 0 { Some(total) } else { None },
-                    detail: if ok == 3 { "OPTCG API • cartes".into() } else if ok > 0 { format!("OPTCG partiel ({}/3)", ok) } else { last_error },
-                }
+            }
+            ApiStatus {
+                id: "onepiece".into(),
+                name: "One Piece".into(),
+                connected: ok > 0,
+                latency_ms: start.elapsed().as_millis(),
+                count: if ok > 0 { Some(total) } else { None },
+                detail: if ok == 4 {
+                    "OPTCG API publique • cartes".into()
+                } else if ok > 0 {
+                    format!("OPTCG API partielle ({}/4)", ok)
+                } else {
+                    last_error
+                },
             }
         }
 
@@ -324,6 +321,95 @@ async fn api_status(game: String, api_url: Option<String>, api_key: Option<Strin
             }
         }
 
+        "naruto" => ApiStatus {
+            id: "naruto".into(),
+            name: "Naruto Mythos".into(),
+            connected: true,
+            latency_ms: start.elapsed().as_millis(),
+            count: Some(130),
+            detail: "Base locale Set 1".into(),
+        },
+
+        "lorcana" => {
+            // Catalogue complet Lorcana, public et sans authentification.
+            let url = "https://api.lorcana-api.com/bulk/cards";
+            match send_json(&client, url, None).await {
+                Ok((status, json)) if status.is_success() => {
+                    let count = json.as_array().map(|a| a.len() as u64);
+                    ApiStatus { id:"lorcana".into(), name:"Disney Lorcana".into(), connected:true, latency_ms:start.elapsed().as_millis(), count, detail:"Lorcana API publique".into() }
+                }
+                Ok((status,_)) => ApiStatus { id:"lorcana".into(), name:"Disney Lorcana".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("HTTP {}",status) },
+                Err(e) => ApiStatus { id:"lorcana".into(), name:"Disney Lorcana".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
+            }
+        }
+
+        "digimon" => {
+            let url = "https://digimoncard.io/api-public/getAllCards?series=Digimon%20Card%20Game&sort=card_number&sortdirection=asc";
+            match send_json(&client, url, None).await {
+                Ok((status, json)) if status.is_success() => {
+                    let count = json.as_array().map(|a| a.len() as u64);
+                    ApiStatus { id:"digimon".into(), name:"Digimon".into(), connected:true, latency_ms:start.elapsed().as_millis(), count, detail:"DigimonCard.io API".into() }
+                }
+                Ok((status,_)) => ApiStatus { id:"digimon".into(), name:"Digimon".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("HTTP {}",status) },
+                Err(e) => ApiStatus { id:"digimon".into(), name:"Digimon".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
+            }
+        }
+
+        "fleshblood" => {
+            let url = "https://api.goagain.dev/v1/cards?limit=1&offset=0";
+            match send_json(&client, url, None).await {
+                Ok((status, json)) if status.is_success() => {
+                    let count = json.get("total").and_then(Value::as_u64);
+                    ApiStatus { id:"fleshblood".into(), name:"Flesh and Blood".into(), connected:true, latency_ms:start.elapsed().as_millis(), count, detail:"goagain.dev API".into() }
+                }
+                Ok((status,_)) => ApiStatus { id:"fleshblood".into(), name:"Flesh and Blood".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("HTTP {}",status) },
+                Err(e) => ApiStatus { id:"fleshblood".into(), name:"Flesh and Blood".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
+            }
+        }
+
+        "dragonball" => {
+            // ApiTCG publie le catalogue Fusion World sur GitHub. On passe par
+            // l'API JSON publique de GitHub : aucune clé utilisateur nécessaire.
+            let url = "https://api.github.com/repos/apitcg/dragon-ball-fusion-tcg-data/contents/cards/en";
+            match send_json(&client, url, None).await {
+                Ok((status, _)) if status.is_success() => ApiStatus {
+                    id:"dragonball".into(), name:"Dragon Ball Super".into(), connected:true,
+                    latency_ms:start.elapsed().as_millis(), count:None,
+                    detail:"ApiTCG • catalogue public Fusion World".into()
+                },
+                Ok((status,_)) => ApiStatus { id:"dragonball".into(), name:"Dragon Ball Super".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("ApiTCG HTTP {}",status) },
+                Err(e) => ApiStatus { id:"dragonball".into(), name:"Dragon Ball Super".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
+            }
+        }
+
+        "unionarena" => {
+            let url = "https://api.github.com/repos/apitcg/union-arena-tcg-data/contents/cards/en";
+            match send_json(&client, url, None).await {
+                Ok((status, _)) if status.is_success() => ApiStatus {
+                    id:"unionarena".into(), name:"Union Arena".into(), connected:true,
+                    latency_ms:start.elapsed().as_millis(), count:None,
+                    detail:"ApiTCG • catalogue public Union Arena".into()
+                },
+                Ok((status,_)) => ApiStatus { id:"unionarena".into(), name:"Union Arena".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("ApiTCG HTTP {}",status) },
+                Err(e) => ApiStatus { id:"unionarena".into(), name:"Union Arena".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e },
+            }
+        }
+
+        "weiss" => {
+            // tcg-api.com expose une API publique pour Weiß Schwarz. Le endpoint
+            // racine sert ici de contrôle de disponibilité sans clé utilisateur.
+            let url = "https://www.tcg-api.com/";
+            match client.get(url).send().await {
+                Ok(resp) if resp.status().is_success() => ApiStatus {
+                    id:"weiss".into(), name:"Weiss Schwarz".into(), connected:true,
+                    latency_ms:start.elapsed().as_millis(), count:None,
+                    detail:"tcg-api.com • Weiß Schwarz public".into()
+                },
+                Ok(resp) => ApiStatus { id:"weiss".into(), name:"Weiss Schwarz".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("tcg-api.com HTTP {}",resp.status()) },
+                Err(e) => ApiStatus { id:"weiss".into(), name:"Weiss Schwarz".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e.to_string() },
+            }
+        }
+
         _ => ApiStatus {
             id: game,
             name: "API".into(),
@@ -377,7 +463,7 @@ async fn search_ygo_by_id(passcode: String) -> Result<CardResult, String> {
     let url = format!("https://db.ygoprodeck.com/api/v7/cardinfo.php?id={}", code);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.12")
+        .user_agent("TCG-STREAM-TOOL/1.0.13")
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Passcode {} introuvable (HTTP {})", code, resp.status())); }
@@ -396,7 +482,7 @@ async fn search_vanguard_by_code(code: String) -> Result<CardResult, String> {
     );
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .user_agent("TCG-STREAM-TOOL/1.0.12")
+        .user_agent("TCG-STREAM-TOOL/1.0.13")
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Vanguard HTTP {}", resp.status())); }
@@ -441,7 +527,7 @@ async fn search_ygo_card(query: String, language: Option<String>) -> Result<Card
     }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.12")
+        .user_agent("TCG-STREAM-TOOL/1.0.13")
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Carte introuvable (HTTP {})", resp.status())); }
@@ -453,7 +539,7 @@ async fn search_ygo_card(query: String, language: Option<String>) -> Result<Card
 #[tauri::command]
 async fn check_latest_release() -> Result<ReleaseCheck, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();
-    let client = reqwest::Client::builder().user_agent("TCG-STREAM-TOOL/1.0.12").build().map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder().user_agent("TCG-STREAM-TOOL/1.0.13").build().map_err(|e| e.to_string())?;
     let resp = client.get("https://api.github.com/repos/reddice-geek/tcg-stream-tool/releases/latest").send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("GitHub HTTP {}", resp.status())); }
     let json: Value = resp.json().await.map_err(|e| e.to_string())?;
@@ -497,7 +583,6 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(shared)
         .invoke_handler(tauri::generate_handler![
             overlay_info,
