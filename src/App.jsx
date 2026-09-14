@@ -779,8 +779,7 @@ export default function App(){
       <section className="leftcol">
         <div className="panel">
           <div className="panel-title"><span>▱ {tr.overlays}</span><span className="chip">{TCG_LABEL[selectedTcg] || selectedTcg}</span></div>
-          {['Cam Frame','Card Pop','Chat Box'].map((x,i)=><div className="toggle-row" key={x}><div><b>{x}</b><small>{i===0?'Cadre caméra':i===1?'Carte détectée':'Zone chat'}</small></div><span className="switch on"></span></div>)}
-          <div className="toggle-row disabled"><div><b>Alert Box</b><small>Follow / Sub</small></div><span className="switch"></span></div>
+          {['Cam Frame','Card Pop'].map((x,i)=><div className="toggle-row" key={x}><div><b>{x}</b><small>{i===0?'Cadre caméra':'Carte détectée'}</small></div><span className="switch on"></span></div>)}
         </div>
 
         <div className="panel">
