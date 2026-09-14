@@ -130,7 +130,7 @@ fn set_overlay_card(shared: State<'_, OverlayShared>, card: OverlayCard) -> Resu
 async fn api_status(game: String, api_url: Option<String>, api_key: Option<String>) -> ApiStatus {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.11")
+        .user_agent("TCG-STREAM-TOOL/1.0.12")
         .build()
         .unwrap_or_default();
 
@@ -377,7 +377,7 @@ async fn search_ygo_by_id(passcode: String) -> Result<CardResult, String> {
     let url = format!("https://db.ygoprodeck.com/api/v7/cardinfo.php?id={}", code);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.11")
+        .user_agent("TCG-STREAM-TOOL/1.0.12")
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Passcode {} introuvable (HTTP {})", code, resp.status())); }
@@ -396,7 +396,7 @@ async fn search_vanguard_by_code(code: String) -> Result<CardResult, String> {
     );
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .user_agent("TCG-STREAM-TOOL/1.0.11")
+        .user_agent("TCG-STREAM-TOOL/1.0.12")
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Vanguard HTTP {}", resp.status())); }
@@ -441,7 +441,7 @@ async fn search_ygo_card(query: String, language: Option<String>) -> Result<Card
     }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.11")
+        .user_agent("TCG-STREAM-TOOL/1.0.12")
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Carte introuvable (HTTP {})", resp.status())); }
@@ -453,7 +453,7 @@ async fn search_ygo_card(query: String, language: Option<String>) -> Result<Card
 #[tauri::command]
 async fn check_latest_release() -> Result<ReleaseCheck, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();
-    let client = reqwest::Client::builder().user_agent("TCG-STREAM-TOOL/1.0.11").build().map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder().user_agent("TCG-STREAM-TOOL/1.0.12").build().map_err(|e| e.to_string())?;
     let resp = client.get("https://api.github.com/repos/reddice-geek/tcg-stream-tool/releases/latest").send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("GitHub HTTP {}", resp.status())); }
     let json: Value = resp.json().await.map_err(|e| e.to_string())?;
@@ -497,6 +497,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(shared)
         .invoke_handler(tauri::generate_handler![
             overlay_info,
