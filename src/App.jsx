@@ -426,13 +426,6 @@ export default function App(){
     if(!value) return null;
     setSearching(true);
     try{
-      if(selectedTcg==='ygo'){
-        const apiLang=['fr','it'].includes(lang)?lang:null;
-        const r=await invoke('search_ygo_card',{query:value,language:apiLang});
-        setCard(r);
-        return r;
-      }
-
       if(selectedTcg==='naruto'){
         const q=value
           .normalize('NFD')
@@ -456,7 +449,11 @@ export default function App(){
         return r;
       }
 
-      throw new Error(`Recherche manuelle pas encore configurée pour ${TCG_LABEL[selectedTcg] || selectedTcg}.`);
+      const apiLang=['fr','it'].includes(lang)?lang:'en';
+      const r=await invoke('search_card_universal',{game:selectedTcg,query:value,language:apiLang});
+      setCard(r);
+      setLastDetected(`${r.name} • ${r.id || value} • recherche API`);
+      return r;
     }catch(e){
       if(!forcedQuery) setToast(String(e));
       return null;
@@ -638,6 +635,25 @@ export default function App(){
     }
   }
 
+  function captureCardImageForApi(){
+    const video=videoRef.current;
+    if(!video || !video.videoWidth || !video.videoHeight) throw new Error('La caméra n’est pas prête');
+    const r=getCardRect(video);
+    const canvas=document.createElement('canvas');
+    canvas.width=320;
+    canvas.height=Math.round(320*(r.h/r.w));
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,canvas.width,canvas.height);
+    let quality=.66;
+    let data=canvas.toDataURL('image/jpeg',quality);
+    while(data.length>132000 && quality>.34){
+      quality-=.08;
+      data=canvas.toDataURL('image/jpeg',quality);
+    }
+    if(data.length>136000) throw new Error('Image trop lourde pour l’analyse. Rapproche la carte et réessaie.');
+    return data;
+  }
+
   function makeNarutoCard(entry, editionText='', imageUrl=''){
     const first=/1ST|1RE|1ERE|1ÈRE|FIRST/i.test(editionText);
     return {
@@ -667,58 +683,18 @@ export default function App(){
 
     try{
       const visual=analyzeCardFrame();
-      if(visual.score<30){
+      if(visual.score<24){
         if(!automatic) throw new Error('Aucune carte suffisamment nette détectée dans le cadre.');
         setLastOcr(`Carte non détectée • visuel ${visual.score}%`);
         return;
       }
-      const worker=await getVisionWorker();
+
       let found=null;
       let detectedCode='';
       let confidence=0;
 
-      if(selectedTcg==='ygo'){
-        const ocr=await recognizeBest(
-          worker,
-          ['ygo-passcode','ygo-passcode-wide','bottom-left'],
-          '0123456789OQDILZSBG',
-          extractYgoPasscode
-        );
-        confidence=ocr.confidence;
-        detectedCode=ocr.code || '';
-        setLastOcr(`${detectedCode || cleanOcrText(ocr.text) || '—'} • ${Math.round(confidence)}%`);
-        if(!/^\d{8}$/.test(detectedCode)) {
-          throw new Error('Passcode YGO non lu. Place le bas de la carte dans le cadre : 8 chiffres attendus en bas à gauche.');
-        }
-        if(automatic){
-          // L'API est la preuve finale : on accepte un OCR moyen s'il donne 8 chiffres stables 2 fois.
-          if(confidence<55) return;
-          if(!stableAutoCandidate(`ygo:${detectedCode}`)){ setLastDetected(`Code lu • vérification 1/2 • ${detectedCode}`); return; }
-        }
-        try{
-          found=await invoke('search_ygo_by_id',{passcode:detectedCode});
-        }catch(apiError){
-          throw new Error(`Code ${detectedCode} lu, mais aucune carte YGO correspondante n'a été confirmée par la base.`);
-        }
-      }
-      else if(selectedTcg==='vanguard'){
-        const ocr=await recognizeBest(
-          worker,
-          ['vanguard-code','bottom-right'],
-          'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/',
-          extractVanguardCode
-        );
-        confidence=ocr.confidence;
-        detectedCode=ocr.code || '';
-        setLastOcr(`${detectedCode || cleanOcrText(ocr.text) || '—'} • ${Math.round(confidence)}%`);
-        if(!detectedCode) throw new Error('Code Vanguard non lu. Exemple attendu : D-BT01/001EN en bas à droite.');
-        if(automatic){
-          if(confidence<55) return;
-          if(!stableAutoCandidate(`vanguard:${detectedCode}`)){ setLastDetected(`Code lu • vérification 1/2 • ${detectedCode}`); return; }
-        }
-        found=await invoke('search_vanguard_by_code',{code:detectedCode});
-      }
-      else if(selectedTcg==='naruto'){
+      if(selectedTcg==='naruto'){
+        const worker=await getVisionWorker();
         const left=await recognizeBest(
           worker,
           ['naruto-number','naruto-number-wide','bottom-left'],
@@ -735,27 +711,43 @@ export default function App(){
         const entry=narutoSet1.find(x=>x.index===idx);
         if(!entry) throw new Error(`Carte ${idx}/130 absente de la base locale.`);
         if(automatic){
-          // La base locale valide le numéro. Deux lectures identiques évitent les faux positifs.
-          if(confidence<50) return;
+          if(confidence<45) return;
           if(!stableAutoCandidate(`naruto:${idx}`)){ setLastDetected(`Code lu • vérification 1/2 • ${idx}/130`); return; }
         }else if(confidence<45 && !(await acceptLowConfidence(`${entry.title} (${idx}/130)`,confidence))) return;
         found=makeNarutoCard(entry,right.text,captureCardImage());
-      }
-      else {
-        throw new Error(`Scanner dédié ${TCG_LABEL[selectedTcg] || selectedTcg} pas encore configuré. Choisis YGO, Vanguard ou Naruto Mythos.`);
+      }else{
+        // Analyse universelle : la carte ENTIÈRE est envoyée à l'API publique de reconnaissance.
+        // Le résultat est ensuite résolu vers le produit afin de récupérer nom, numéro, set et image.
+        const imageDataUrl=captureCardImageForApi();
+        const result=await invoke('scan_open_tcg',{game:selectedTcg,imageDataUrl});
+        found=result.card;
+        confidence=Number(result.score || 0);
+        detectedCode=String(found?.id || result.product_id || '');
+        setLastOcr(`${detectedCode || 'carte'} • correspondance visuelle ${Math.round(confidence)}%`);
+
+        if(automatic){
+          if(confidence<68) return;
+          const stableKey=`${selectedTcg}:${result.product_id || detectedCode || found?.name}`;
+          if(!stableAutoCandidate(stableKey)){
+            setLastDetected(`Carte reconnue • vérification 1/2 • ${found?.name || detectedCode}`);
+            return;
+          }
+        }else if(confidence<75 && !(await acceptLowConfidence(found?.name || detectedCode,confidence))){
+          return;
+        }
       }
 
       if(!found) throw new Error('Carte non reconnue.');
       setScanConfidence(Math.round(confidence));
       setCard(found);
       setQuery(found.name || detectedCode);
-      setLastDetected(`${found.name || detectedCode} • code ${detectedCode || 'local'} • confirmé`);
+      setLastDetected(`${found.name || detectedCode} • ${found.id || detectedCode || 'carte'} • confirmé`);
       setToast(`${tr.detected} : ${found.name || detectedCode}`);
       if(autoOverlay) await showCardOnOverlay(found);
     }catch(e){
       console.warn('Vision:',e);
       if(!automatic) setToast(String(e));
-      if(!automatic && !lastOcr) setLastOcr('Aucun code valide');
+      if(!automatic && !lastOcr) setLastOcr('Aucune carte valide');
     }finally{
       detectingRef.current=false;
       setDetecting(false);
@@ -959,7 +951,7 @@ export default function App(){
       <section className="centercol">
         <div className="camera-panel">
           <div className="live-badge"><i></i> LIVE</div>
-          <div className={cameraOn?'vision-guide active':'vision-guide'}><span>{selectedTcg==='ygo'?'PASSCODE BAS GAUCHE':selectedTcg==='vanguard'?'CODE BAS DROITE':selectedTcg==='naruto'?'NUMÉRO + ÉDITION':'ZONE CARTE'}</span></div>
+          <div className={cameraOn?'vision-guide active':'vision-guide'}><span>{selectedTcg==='naruto'?'NUMÉRO + ÉDITION':'CARTE ENTIÈRE • API VISUELLE'}</span></div>
           <video ref={videoRef} className={cameraOn?'camera-video':'camera-video hidden'} playsInline muted />
           {!cameraOn && <div className="camera-empty"><div className="cam-icon">◉</div><h3>{tr.camOff}</h3><button className="primary" onClick={()=>startCamera()}>Activer la caméra</button></div>}
           <div className="camera-bottom"><span>● {cameraOn?`LIVE • ${camFps || '—'} FPS`:'OFFLINE'}</span><div className="cam-actions">
@@ -972,10 +964,10 @@ export default function App(){
           <input
             value={query}
             onChange={e=>setQuery(e.target.value)}
-            placeholder={selectedTcg==='ygo'?tr.search:selectedTcg==='naruto'?'Rechercher Naruto : nom, 125/130 ou KS-125':`Recherche ${TCG_LABEL[selectedTcg] || 'TCG'}`}
-            disabled={!['ygo','naruto'].includes(selectedTcg)}
+            placeholder={selectedTcg==='naruto'?'Rechercher Naruto : nom, 125/130 ou KS-125':`Rechercher ${TCG_LABEL[selectedTcg] || 'TCG'} : nom ou numéro de carte`}
+            disabled={false}
           />
-          <button className="primary" disabled={searching || !['ygo','naruto'].includes(selectedTcg)}>{searching?'…':'Rechercher'}</button>
+          <button className="primary" disabled={searching}>{searching?'…':'Rechercher'}</button>
         </form>
 
         <div className="card-panel">
@@ -1004,7 +996,7 @@ export default function App(){
           <label className="checkline"><input type="checkbox" checked={detectionOn} onChange={e=>setDetectionOn(e.target.checked)}/><span>Détection automatique — analyser la carte et son code</span></label>
           <button className="primary full scan-main" disabled={!cameraOn || detecting} onClick={()=>scanCameraCard({automatic:false})}>{detecting?'Analyse…':'SCANNER MAINTENANT'}</button>
           <label className="checkline"><input type="checkbox" checked={autoOverlay} onChange={e=>setAutoOverlay(e.target.checked)}/><span>{tr.autoOverlay}</span></label>
-          <small>{selectedTcg==='ygo'?'YGO : vérifie d’abord la présence et la netteté de la carte, puis lit le passcode de 8 chiffres en bas à gauche et le confirme par API.':selectedTcg==='vanguard'?'Vanguard : analyse la carte puis lit le code en bas à droite, ex. D-BT01/001EN, et le vérifie dans la cardlist.':selectedTcg==='naruto'?'Naruto Mythos : analyse la carte + numéro x/130 à gauche + édition à droite, puis vérifie la base locale.':'Source publique intégrée. Le scanner utilise la zone code de la carte et valide le résultat avec la base correspondante lorsqu’un code exploitable est détecté.'}</small>
+          <small>{selectedTcg==='naruto'?'Naruto Mythos : lit le numéro x/130 + l’édition et vérifie la base locale.':'Analyse la carte entière par API visuelle publique, récupère le nom, le numéro, le set et l’image puis l’affiche dans TCG STREAM TOOL et dans OBS.'}</small>
           <div className="ocr-box"><span>OCR / CODE</span><b>{lastOcr || '—'}</b></div>
           {lastDetected && <div className="detected-box"><span>{tr.detected}</span><b>{lastDetected}</b></div>}
         </div>
