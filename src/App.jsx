@@ -695,6 +695,58 @@ export default function App(){
     return data;
   }
 
+  function extractGenericReference(text){
+    const raw=String(text || '').toUpperCase().replace(/[–—]/g,'-');
+    const patterns=[
+      /\b[A-Z]{1,5}[- ]?[A-Z0-9]{1,8}\/\d{1,4}[A-Z]{0,3}\b/,
+      /\b[A-Z]{1,6}[- ]?\d{1,4}[- ]?[A-Z]{0,4}\d{0,4}\b/,
+      /\b\d{1,4}\/\d{1,4}\b/,
+      /\b[A-Z]{1,5}\d{1,5}\b/
+    ];
+    for(const p of patterns){
+      const m=raw.match(p);
+      if(m) return m[0].replace(/\s+/g,'');
+    }
+    return '';
+  }
+
+  function ocrCardMatchScore(card, fullText, refText){
+    const hay=normalizeCardText(`${fullText || ''} ${refText || ''}`);
+    if(!hay) return 0;
+    const name=normalizeCardText(card?.name || '');
+    const id=normalizeCardText(card?.id || '').replace(/\s+/g,'');
+    let score=0;
+    if(name){
+      if(hay.includes(name)) score=Math.max(score,100);
+      else {
+        const words=name.split(' ').filter(w=>w.length>=3);
+        if(words.length){
+          const hits=words.filter(w=>hay.includes(w)).length;
+          score=Math.max(score,Math.round((hits/words.length)*92));
+        }
+      }
+    }
+    if(id){
+      const compact=hay.replace(/\s+/g,'');
+      if(compact.includes(id)) score=Math.max(score,100);
+      else {
+        const ref=normalizeCardText(refText || '').replace(/\s+/g,'');
+        if(ref && (ref.includes(id) || id.includes(ref))) score=Math.max(score,90);
+      }
+    }
+    return score;
+  }
+
+  function pickOcrSearchCandidate(text){
+    const lines=String(text || '')
+      .split(/\n+/)
+      .map(cleanOcrText)
+      .filter(x=>x.length>=3 && x.length<=70)
+      .filter(x=>/[A-Za-zÀ-ÿ]/.test(x));
+    lines.sort((a,b)=>b.length-a.length);
+    return lines[0] || '';
+  }
+
   function makeNarutoCard(entry, editionText='', imageUrl=''){
     const first=/1ST|1RE|1ERE|1ÈRE|FIRST/i.test(editionText);
     return {
@@ -794,23 +846,86 @@ export default function App(){
         found.number=entry.number;
         found.set=entry.set;
       }else{
-        // Analyse universelle : la carte ENTIÈRE est envoyée à l'API publique de reconnaissance.
-        // Le résultat est ensuite résolu vers le produit afin de récupérer nom, numéro, set et image.
+        // Reconnaissance hybride : 1) image complète via moteur visuel public,
+        // 2) OCR local du nom / numéro, 3) fiche API complète, 4) validation croisée.
         const imageDataUrl=captureCardImageForApi();
-        const result=await invoke('scan_open_tcg',{game:selectedTcg,imageDataUrl});
-        found=result.card;
-        confidence=Number(result.score || 0);
-        detectedCode=String(found?.id || result.product_id || '');
-        setLastOcr(`${detectedCode || 'carte'} • correspondance visuelle ${Math.round(confidence)}%`);
+        const displayCapture=captureCardImage();
+        let result=null;
+        let visualError=null;
+
+        try{
+          result=await invoke('scan_open_tcg',{game:selectedTcg,imageDataUrl});
+          found=result.card;
+          confidence=Number(result.score || 0);
+        }catch(err){
+          visualError=err;
+        }
+
+        const worker=await getVisionWorker();
+        const fullRead=await recognizeZone(
+          worker,
+          'card-full',
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÄÇÉÈÊËÍÎÏÓÔÖÙÛÜ0123456789-/:. '
+        );
+        const refRead=await recognizeZone(
+          worker,
+          'bottom-wide',
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/: '
+        );
+        const genericRef=extractGenericReference(`${refRead.text || ''} ${fullRead.text || ''}`);
+        const ocrName=pickOcrSearchCandidate(fullRead.text);
+
+        // Si le moteur visuel ne répond pas, on tente une récupération API à partir du code/nom OCR.
+        if(!found){
+          try{
+            if(selectedTcg==='ygo'){
+              const pass=extractYgoPasscode(`${refRead.text || ''} ${fullRead.text || ''}`);
+              if(pass) found=await invoke('search_ygo_by_id',{passcode:pass});
+            }else if(selectedTcg==='vanguard'){
+              const code=extractVanguardCode(`${refRead.text || ''} ${fullRead.text || ''}`);
+              if(code) found=await invoke('search_vanguard_by_code',{code});
+            }else{
+              const q=genericRef || ocrName;
+              if(q) found=await invoke('search_card_universal',{game:selectedTcg,query:q,language:apiLang});
+            }
+            if(found) confidence=Math.max(Number(fullRead.confidence || 0),Number(refRead.confidence || 0),55);
+          }catch{/* la vraie erreur sera affichée plus bas */}
+        }
+
+        if(!found){
+          throw new Error(`Carte non reconnue par l’IA visuelle ni par l’OCR/API.${visualError ? ` ${String(visualError)}` : ''}`);
+        }
+
+        detectedCode=String(found?.id || result?.product_id || genericRef || '');
+        const ocrMatch=ocrCardMatchScore(found,fullRead.text,`${genericRef} ${refRead.text || ''}`);
+        const visualScore=Number(result?.score || confidence || 0);
+        // Le score final conserve le visuel comme signal principal et ajoute la confirmation OCR.
+        confidence=Math.min(100,Math.round(Math.max(visualScore,visualScore*0.82+ocrMatch*0.18)));
+
+        found={
+          ...found,
+          image_url:found?.image_url || displayCapture,
+          source:'IA visuelle + OCR local + API',
+          reference:found?.id || genericRef || '',
+          ocr_name:ocrName,
+          ocr_reference:genericRef
+        };
+
+        const proof=[
+          detectedCode || genericRef || 'référence ?',
+          `${Math.round(visualScore)}% visuel`,
+          ocrMatch ? `${ocrMatch}% OCR` : 'OCR sans confirmation'
+        ].join(' • ');
+        setLastOcr(proof);
 
         if(automatic){
           if(confidence<68) return;
-          const stableKey=`${selectedTcg}:${result.product_id || detectedCode || found?.name}`;
+          const stableKey=`${selectedTcg}:${result?.product_id || detectedCode || found?.name}`;
           if(!stableAutoCandidate(stableKey)){
             setLastDetected(`Carte reconnue • vérification 1/2 • ${found?.name || detectedCode}`);
             return;
           }
-        }else if(confidence<75 && !(await acceptLowConfidence(found?.name || detectedCode,confidence))){
+        }else if(confidence<75 && !(await acceptLowConfidence(`${found?.name || detectedCode}${detectedCode ? ` • ${detectedCode}` : ''}`,confidence))){
           return;
         }
       }
@@ -1074,7 +1189,7 @@ export default function App(){
           <label className="checkline"><input type="checkbox" checked={detectionOn} onChange={e=>setDetectionOn(e.target.checked)}/><span>Détection automatique — analyser la carte et son code</span></label>
           <button className="primary full scan-main" disabled={!cameraOn || detecting} onClick={()=>scanCameraCard({automatic:false})}>{detecting?'Analyse…':'SCANNER MAINTENANT'}</button>
           <label className="checkline"><input type="checkbox" checked={autoOverlay} onChange={e=>setAutoOverlay(e.target.checked)}/><span>{tr.autoOverlay}</span></label>
-          <small>{selectedTcg==='naruto'?'Naruto Mythos : lit le numéro x/130 + l’édition et vérifie la base locale.':'Analyse la carte entière par API visuelle publique, récupère le nom, le numéro, le set et l’image puis l’affiche dans TCG STREAM TOOL et dans OBS.'}</small>
+          <small>{selectedTcg==='naruto'?'Naruto Mythos : lit le numéro x/130 + l’édition et vérifie la base locale.':'IA hybride : analyse visuelle de la carte entière + OCR du nom/numéro + vérification API. Le nom, la référence, le set et l’image sont ensuite affichés dans l’application et dans OBS.'}</small>
           <div className="ocr-box"><span>OCR / CODE</span><b>{lastOcr || '—'}</b></div>
           {lastDetected && <div className="detected-box"><span>{tr.detected}</span><b>{lastDetected}</b></div>}
         </div>
