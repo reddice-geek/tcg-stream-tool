@@ -756,11 +756,21 @@ export default function App(){
 
   return <div className="app">
     <header className="topbar">
-      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.12</span></div></div>
+      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.13</span></div></div>
       <div className="user"><strong>Quentin</strong><span>● LIVE READY</span></div>
       <div className="top-actions">
         <select value={lang} onChange={e=>setLang(e.target.value)}><option value="fr">FR</option><option value="en">EN</option><option value="es">ES</option><option value="it">IT</option></select>
-        <button className="mode">◆ {TCG_LABEL[selectedTcg] || selectedTcg}</button>
+        <div className="mode-select-wrap" title="Choisir le TCG à scanner">
+          <span className="mode-diamond">◆</span>
+          <select
+            className="mode mode-select"
+            value={selectedTcg}
+            onChange={e=>setSelectedTcg(e.target.value)}
+            aria-label="TCG à scanner"
+          >
+            {TCG_OPTIONS.map(([id,name])=><option key={id} value={id}>{name}</option>)}
+          </select>
+        </div>
         <button className="iconbtn" onClick={()=>setSettingsOpen(true)}>⚙</button>
       </div>
     </header>
@@ -820,11 +830,6 @@ export default function App(){
         </div>
         <div className="panel vision-panel">
           <div className="panel-title">⌁ SCANNER UNE CARTE</div>
-          <label className="scan-tcg-label">TCG À SCANNER
-            <select className="scan-tcg-select" value={selectedTcg} onChange={e=>setSelectedTcg(e.target.value)}>
-              {TCG_OPTIONS.map(([id,name])=><option key={id} value={id}>{name}</option>)}
-            </select>
-          </label>
           <div className={(detecting || detectionOn)?'vision-status on':'vision-status'}><i className={(detecting || detectionOn)?'dot ok':'dot'}></i>{detecting?'Analyse carte + code…':detectionOn?'Détection automatique active • analyse toutes les 2,2 s':'Prêt — mode manuel'}</div>
           <label className="checkline"><input type="checkbox" checked={detectionOn} onChange={e=>setDetectionOn(e.target.checked)}/><span>Détection automatique — analyser la carte et son code</span></label>
           <button className="primary full scan-main" disabled={!cameraOn || detecting} onClick={()=>scanCameraCard({automatic:false})}>{detecting?'Analyse…':'SCANNER MAINTENANT'}</button>
