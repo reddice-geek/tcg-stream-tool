@@ -426,10 +426,37 @@ export default function App(){
     if(!value) return null;
     setSearching(true);
     try{
-      const apiLang=['fr','it'].includes(lang)?lang:null;
-      const r=await invoke('search_ygo_card',{query:value,language:apiLang});
-      setCard(r);
-      return r;
+      if(selectedTcg==='ygo'){
+        const apiLang=['fr','it'].includes(lang)?lang:null;
+        const r=await invoke('search_ygo_card',{query:value,language:apiLang});
+        setCard(r);
+        return r;
+      }
+
+      if(selectedTcg==='naruto'){
+        const q=value
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g,'')
+          .toLowerCase()
+          .trim();
+        const numberMatch=q.match(/(?:^|\s)(\d{1,3})(?:\s*\/\s*130)?(?:$|\s)/);
+        const idx=numberMatch?Number(numberMatch[1]):null;
+        const entry=narutoSet1.find(x=>
+          (idx!=null && x.index===idx) ||
+          String(x.number||'').toLowerCase()===q ||
+          String(x.set_code||'').toLowerCase()===q ||
+          String(x.name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(q) ||
+          String(x.title||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(q)
+        );
+        if(!entry) throw new Error(`Aucune carte Naruto Mythos trouvée pour « ${value} »`);
+        const r=makeNarutoCard(entry);
+        setCard(r);
+        setQuery(entry.number);
+        setLastDetected(`${entry.title || entry.name} • ${entry.number} • base locale`);
+        return r;
+      }
+
+      throw new Error(`Recherche manuelle pas encore configurée pour ${TCG_LABEL[selectedTcg] || selectedTcg}.`);
     }catch(e){
       if(!forcedQuery) setToast(String(e));
       return null;
@@ -487,7 +514,9 @@ export default function App(){
     }else if(kind==='bottom-right'){
       zx=r.x+Math.floor(r.w*.34); zy=r.y+Math.floor(r.h*.65); zw=Math.floor(r.w*.66); zh=Math.floor(r.h*.35);
     }else if(kind==='naruto-number'){
-      zx=r.x; zy=r.y+Math.floor(r.h*.72); zw=Math.floor(r.w*.55); zh=Math.floor(r.h*.28);
+      zx=r.x; zy=r.y+Math.floor(r.h*.70); zw=Math.floor(r.w*.60); zh=Math.floor(r.h*.30);
+    }else if(kind==='naruto-number-wide'){
+      zx=r.x; zy=r.y+Math.floor(r.h*.60); zw=Math.floor(r.w*.72); zh=Math.floor(r.h*.40);
     }else if(kind==='naruto-edition'){
       zx=r.x+Math.floor(r.w*.48); zy=r.y+Math.floor(r.h*.72); zw=Math.floor(r.w*.52); zh=Math.floor(r.h*.28);
     }
@@ -578,7 +607,38 @@ export default function App(){
     return attempts[0] || {text:'',confidence:0,code:'',zone:''};
   }
 
-  function makeNarutoCard(entry, editionText=''){
+  function extractNarutoNumber(text){
+    const normalized=String(text || '')
+      .toUpperCase()
+      .replace(/[OQ]/g,'0')
+      .replace(/[IL|]/g,'1')
+      .replace(/\s+/g,' ')
+      .trim();
+    const compact=normalized.replace(/\s+/g,'');
+    let m=compact.match(/(?:^|\D)(\d{1,3})\/130(?:\D|$)/);
+    if(!m) m=compact.match(/(?:^|\D)(\d{1,3})130(?:\D|$)/);
+    if(!m) return '';
+    const idx=Number(m[1]);
+    return idx>=1 && idx<=130 ? `${idx}/130` : '';
+  }
+
+  function captureCardImage(){
+    try{
+      const video=videoRef.current;
+      if(!video || !video.videoWidth || !video.videoHeight) return '';
+      const r=getCardRect(video);
+      const canvas=document.createElement('canvas');
+      canvas.width=560;
+      canvas.height=Math.round(560*(r.h/r.w));
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,canvas.width,canvas.height);
+      return canvas.toDataURL('image/jpeg',0.9);
+    }catch{
+      return '';
+    }
+  }
+
+  function makeNarutoCard(entry, editionText='', imageUrl=''){
     const first=/1ST|1RE|1ERE|1ÈRE|FIRST/i.test(editionText);
     return {
       name:entry.title || entry.name,
@@ -588,7 +648,7 @@ export default function App(){
       race:entry.set_code,
       atk:null,
       def:null,
-      image_url:'',
+      image_url:imageUrl || entry.image_url || '',
       source:'Base locale Naruto Mythos'
     };
   }
@@ -659,22 +719,27 @@ export default function App(){
         found=await invoke('search_vanguard_by_code',{code:detectedCode});
       }
       else if(selectedTcg==='naruto'){
-        const left=await recognizeZone(worker,'naruto-number','0123456789/');
+        const left=await recognizeBest(
+          worker,
+          ['naruto-number','naruto-number-wide','bottom-left'],
+          '0123456789/OQIL',
+          extractNarutoNumber
+        );
         const right=await recognizeZone(worker,'naruto-edition','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789èéÈÉ');
-        confidence=Math.min(left.confidence || 0, Math.max(right.confidence || 0, left.confidence || 0));
-        const compact=left.text.replace(/\s+/g,'');
-        const m=compact.match(/(\d{1,3})\/130/);
-        detectedCode=m?`${Number(m[1])}/130`:'';
-        setLastOcr(`${detectedCode || cleanOcrText(left.text) || '—'} • ${Math.round(left.confidence)}% | ${cleanOcrText(right.text) || 'édition ?'}`);
-        if(!m) throw new Error('Numéro Naruto Mythos non reconnu en bas à gauche. Exemple attendu : 125/130');
+        confidence=left.confidence || 0;
+        detectedCode=left.code || '';
+        setLastOcr(`${detectedCode || cleanOcrText(left.text) || '—'} • ${Math.round(confidence)}% | ${cleanOcrText(right.text) || 'édition ?'}`);
+        const m=detectedCode.match(/^(\d{1,3})\/130$/);
+        if(!m) throw new Error('Numéro Naruto Mythos non reconnu. Place bien le bas gauche de la carte dans le cadre (ex. 125/130).');
         const idx=Number(m[1]);
         const entry=narutoSet1.find(x=>x.index===idx);
         if(!entry) throw new Error(`Carte ${idx}/130 absente de la base locale.`);
         if(automatic){
-          if(left.confidence<85) return;
-          if(!stableAutoCandidate(`naruto:${idx}`)){ setLastDetected(`Vérification 1/2 • ${idx}/130`); return; }
-        }else if(!(await acceptLowConfidence(`${entry.title} (${idx}/130)`,left.confidence))) return;
-        found=makeNarutoCard(entry,right.text);
+          // La base locale valide le numéro. Deux lectures identiques évitent les faux positifs.
+          if(confidence<50) return;
+          if(!stableAutoCandidate(`naruto:${idx}`)){ setLastDetected(`Code lu • vérification 1/2 • ${idx}/130`); return; }
+        }else if(confidence<45 && !(await acceptLowConfidence(`${entry.title} (${idx}/130)`,confidence))) return;
+        found=makeNarutoCard(entry,right.text,captureCardImage());
       }
       else {
         throw new Error(`Scanner dédié ${TCG_LABEL[selectedTcg] || selectedTcg} pas encore configuré. Choisis YGO, Vanguard ou Naruto Mythos.`);
@@ -904,8 +969,13 @@ export default function App(){
         </div>
 
         <form className="searchbar" onSubmit={searchCard}>
-          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder={selectedTcg==='ygo'?tr.search:'Recherche manuelle YGO uniquement'} disabled={selectedTcg!=='ygo'}/>
-          <button className="primary" disabled={searching || selectedTcg!=='ygo'}>{searching?'…':'Rechercher'}</button>
+          <input
+            value={query}
+            onChange={e=>setQuery(e.target.value)}
+            placeholder={selectedTcg==='ygo'?tr.search:selectedTcg==='naruto'?'Rechercher Naruto : nom, 125/130 ou KS-125':`Recherche ${TCG_LABEL[selectedTcg] || 'TCG'}`}
+            disabled={!['ygo','naruto'].includes(selectedTcg)}
+          />
+          <button className="primary" disabled={searching || !['ygo','naruto'].includes(selectedTcg)}>{searching?'…':'Rechercher'}</button>
         </form>
 
         <div className="card-panel">
