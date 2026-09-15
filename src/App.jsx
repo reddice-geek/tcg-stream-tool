@@ -249,7 +249,7 @@ export default function App(){
         setBootStatus('Initialisation du scanner local…');
         setBootProgress(62);
         if(mounted) setApis([]);
-        addBootCheck('Scanner universel local', true, 'Aucune API de cartes');
+        addBootCheck('Scanner universel local', true, '100 % local');
         addBootCheck('OCR local', true, 'Prêt');
 
         setBootStatus('Vérification des mises à jour…');
@@ -313,16 +313,9 @@ export default function App(){
     };
   },[detectionOn,cameraOn,selectedTcg]);
 
-  async function refreshApis(){ setApis([]); return []; }
-
-  async function checkRelease(){
-    try{
-      setRelease(await invoke('check_latest_release'));
-    }catch(e){
-      console.warn(e);
-    }
-
-    await checkNativeUpdate(false);
+  async function refreshApis(){
+    setApis([]);
+    return [];
   }
 
   async function checkNativeUpdate(showToast = true){
@@ -880,10 +873,10 @@ export default function App(){
 
     try{
       const visual=analyzeCardFrame();
-      if(!visual.cardLike || visual.score<30){
-        setLastOcr(`Aucune carte confirmée • qualité ${visual.score}%`);
+      if(visual.score<8){
+        setLastOcr(`Image insuffisante • qualité ${visual.score}%`);
         autoCandidateRef.current={key:'',hits:0,at:0};
-        if(!automatic) throw new Error('Aucune carte complète détectée dans le cadre.');
+        if(!automatic) throw new Error('Image trop sombre ou trop vide pour lire la carte.');
         return;
       }
 
@@ -899,73 +892,35 @@ export default function App(){
       );
       const captured=captureCardImage();
 
-      let found=null;
-      let reference='';
       const allText=`${topRead.text}\n${bottomRead.text}\n${fullRead.text}`;
+      const found=parseUniversalCard(fullRead.text,topRead.text,bottomRead.text,captured);
 
-      if(selectedTcg==='naruto'){
-        reference=extractNarutoNumber(`${bottomRead.text} ${fullRead.text}`);
-        let entry=null;
-        if(reference){
-          const idx=Number(reference.split('/')[0]);
-          entry=narutoSet1.find(x=>Number(x.index)===idx || String(x.number)===reference) || null;
-        }
-        if(!entry) entry=narutoNameFromOcr(`${topRead.text}\n${fullRead.text}`);
+      // Le scanner est 100 % local : aucune API, aucune base de cartes.
+      // On conserve uniquement ce qui est réellement lisible sur la carte.
+      const reference=extractUniversalReference(allText) || found.reference || '';
+      const readName=pickCardName(topRead.text,fullRead.text);
 
-        if(!entry){
-          setLastOcr(`${confidence}% • ${reference || 'référence non confirmée'} • carte Naruto non identifiée`);
-          autoCandidateRef.current={key:'',hits:0,at:0};
-          if(!automatic){
-            if(reference) throw new Error(`Référence ${reference} reconnue, mais absente de la base Naruto locale.`);
-            throw new Error('Carte Naruto non identifiée. Garde le nom et le numéro bien visibles.');
-          }
-          return;
-        }
-        found=makeNarutoCard(entry,allText,captured);
-        found.reference=reference || entry.number;
-        found.image_url=captured;
-      }else{
-        // L'OCR sert uniquement à obtenir une clé de recherche.
-        // On n'affiche jamais parseUniversalCard() directement : l'API doit confirmer la carte.
-        let lookup='';
-        if(selectedTcg==='ygo') lookup=extractYgoPasscode(`${bottomRead.text} ${fullRead.text}`);
-        else if(selectedTcg==='vanguard') lookup=extractVanguardCode(`${bottomRead.text} ${fullRead.text}`);
-        else lookup=extractGenericReference(`${bottomRead.text} ${fullRead.text}`);
+      if(readName && readName!=='Carte scannée') found.name=readName;
+      found.reference=reference;
+      found.image_url=captured;
+      found.source='Lecture caméra + OCR local';
+      found.description=cleanOcrDescription(fullRead.text, found.name, reference);
 
-        const ocrName=pickCardName(topRead.text,fullRead.text);
-        if(!lookup && ocrName && ocrName!=='Carte scannée') lookup=ocrName;
+      // Refuse les scènes/écrans/objets lorsque l'OCR ne ressemble pas à une carte.
+      const evidence=[
+        found.name && found.name!=='Carte scannée',
+        reference,
+        /\b(?:ATK|DEF|GRADE|BOOST|INTERCEPT|CRITICAL|POWER|MAIN|UPGRADE|ÉDITION|EDITION|MYTHOS|TCG|CARD|CARTE|MONSTER|UNIT|POK[EÉ]MON)\b/i.test(allText)
+      ].filter(Boolean).length;
 
-        if(!lookup || confidence<28){
-          setLastOcr(`${confidence}% • carte visible • informations insuffisantes`);
-          if(!automatic) throw new Error('Carte détectée, mais son nom ou sa référence n’est pas assez lisible.');
-          return;
-        }
-
-        const apiLang=['fr','it'].includes(lang)?lang:'en';
-        try{
-          found=await invoke('search_card_universal',{
-            game:selectedTcg,
-            query:lookup,
-            language:apiLang
-          });
-        }catch(apiError){
-          setLastOcr(`${confidence}% • ${lookup} • API sans correspondance`);
-          if(!automatic) throw new Error(`Carte détectée, mais aucune correspondance API fiable pour « ${lookup} ».`);
-          return;
-        }
-
-        if(!found?.name){
-          if(!automatic) throw new Error('La base de cartes n’a pas confirmé cette carte.');
-          return;
-        }
-
-        reference=found.id || found.reference || lookup;
-        found.reference=reference;
-        // Priorité à l'image officielle/API. La capture recadrée sert seulement de secours.
-        if(!found.image_url) found.image_url=captured;
+      if(evidence<2){
+        setLastOcr(`${confidence}% • aucune carte lisible`);
+        autoCandidateRef.current={key:'',hits:0,at:0};
+        if(!automatic) throw new Error('Aucune carte suffisamment lisible. Cadre uniquement la carte et rapproche-la.');
+        return;
       }
 
-      const stableKey=normalizeCardText(`${selectedTcg} ${found.name} ${found.reference||''}`).slice(0,120);
+      const stableKey=normalizeCardText(`${found.name} ${found.reference||''}`).slice(0,120);
       if(automatic && !stableAutoCandidate(stableKey)){
         setLastOcr(`${confidence}% • ${found.reference || '—'} • confirmation 1/2`);
         setLastDetected(`Carte en cours de confirmation • ${found.name}`);
@@ -1159,8 +1114,8 @@ export default function App(){
           <div className="source-row"><span><i className="dot ok"></i>OCR local</span><b>ACTIF</b></div>
           <div className="source-row"><span><i className="dot ok"></i>Capture de la carte</span><b>ACTIVE</b></div>
           <div className="source-row"><span><i className="dot ok"></i>Validation carte</span><b>ACTIVE</b></div>
-          <div className="source-row"><span><i className="dot ok"></i>API cartes</span><b>CONFIRMATION</b></div>
-          <small className="source-local-note">Une vraie carte doit être détectée dans le cadre. L’OCR lit son nom/référence, puis la base du TCG confirme la carte avant l’affichage.</small>
+          <div className="source-row"><span><i className="dot ok"></i>API / base cartes</span><b>DÉSACTIVÉES</b></div>
+          <small className="source-local-note">Une vraie carte doit être détectée dans le cadre. L’OCR lit son nom/référence, puis affiche uniquement les informations réellement lues.</small>
         </div>
       </section>
 
@@ -1176,7 +1131,7 @@ export default function App(){
           </div></div>
         </div>
 
-        <div className="searchbar universal-readout"><span>Montre uniquement la carte dans le cadre : détection → OCR → confirmation API → overlay OBS.</span></div>
+        <div className="searchbar universal-readout"><span>Montre uniquement la carte dans le cadre : détection → OCR → lecture locale → overlay OBS.</span></div>
 
         <div className="card-panel">
           {card ? <>
@@ -1204,7 +1159,7 @@ export default function App(){
           <label className="checkline"><input type="checkbox" checked={detectionOn} onChange={e=>setDetectionOn(e.target.checked)}/><span>Détection automatique — lire toute carte présentée</span></label>
           <button className="primary full scan-main" disabled={!cameraOn || detecting} onClick={()=>scanCameraCard({automatic:false})}>{detecting?'Analyse…':'SCANNER MAINTENANT'}</button>
           <label className="checkline"><input type="checkbox" checked={autoOverlay} onChange={e=>setAutoOverlay(e.target.checked)}/><span>{tr.autoOverlay}</span></label>
-          <small>La caméra vérifie d’abord qu’une carte complète est présente. Le nom et la référence sont lus, puis confirmés par la base du TCG avant l’overlay.</small>
+          <small>La caméra vérifie d’abord qu’une carte complète est présente. Le nom et la référence sont lus, puis lus directement sur la carte avant l’overlay.</small>
           <div className="ocr-box"><span>OCR / CODE</span><b>{lastOcr || '—'}</b></div>
           {lastDetected && <div className="detected-box"><span>{tr.detected}</span><b>{lastDetected}</b></div>}
         </div>
