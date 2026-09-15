@@ -36,9 +36,55 @@ function fmtCount(n){ if(n == null) return '—'; return new Intl.NumberFormat()
 function cleanOcrText(text){
   return String(text || '')
     .replace(/[|\\_~`^]/g,' ')
-    .replace(/[^A-Za-zÀ-ÿ0-9'’\- :]/g,' ')
+    .replace(/[^A-Za-zÀ-ÿ0-9'’\- :/!.(),+]/g,' ')
     .replace(/\s+/g,' ')
     .trim();
+}
+
+function ocrLines(text){
+  return String(text || '')
+    .split(/\n+/)
+    .map(cleanOcrText)
+    .map(x=>x.trim())
+    .filter(Boolean);
+}
+
+function looksLikeRulesText(line){
+  const n=normalizeCardText(line);
+  if(!n) return true;
+  const bad=[
+    'when ','if ','choose ','search your ','deck ','turn ','battle ','damage ',
+    'main ','upgrade ','auto ','act ','discard ','opponent ','unit ','card with ',
+    'cette carte ','personnage ','mission ','deplacez ','envoyez ','defausse ',
+    'monstre ','terrain ','position ','piochez ','invoque ','durant '
+  ];
+  return bad.some(x=>n.includes(normalizeCardText(x)));
+}
+
+function scoreNameLine(line, position=0){
+  const s=cleanOcrText(line);
+  if(s.length<3 || s.length>55) return -999;
+  if(!/[A-Za-zÀ-ÿ]{3}/.test(s)) return -999;
+  if(looksLikeRulesText(s)) return -100;
+  if(/^\d+$/.test(s)) return -100;
+  let score=60-position*4;
+  const words=s.split(/\s+/).filter(Boolean);
+  if(words.length>=1 && words.length<=7) score+=18;
+  if(s.length<=35) score+=10;
+  if(/^[A-ZÀ-Ÿ0-9'’\- !?.]+$/.test(s)) score+=10;
+  if(/\b(?:ATK|DEF|POWER|SHIELD|GRADE|BOOST|INTERCEPT|NORMAL UNIT|CARTE|MONSTER|SPELL|TRAP)\b/i.test(s)) score-=50;
+  return score;
+}
+
+function pickCardName(topText, fullText){
+  const top=ocrLines(topText);
+  const full=ocrLines(fullText).slice(0,10);
+  const candidates=[
+    ...top.map((line,i)=>({line,score:scoreNameLine(line,i)+25})),
+    ...full.map((line,i)=>({line,score:scoreNameLine(line,i)}))
+  ].filter(x=>x.score>0);
+  candidates.sort((a,b)=>b.score-a.score);
+  return candidates[0]?.line || 'Carte scannée';
 }
 
 function normalizeCardText(text){
@@ -415,7 +461,23 @@ export default function App(){
 
   async function showCardOnOverlay(target=card){
     if(!target) return;
-    await invoke('set_overlay_card',{card:{visible:true,name:target.name,subtitle:[target.reference ? `RÉF. ${target.reference}` : '',target.attribute,target.race].filter(Boolean).join(' • '),image_url:target.image_url,atk:target.atk,def:target.def,badge:'CARTE SCANNÉE'}});
+    const subtitle=[
+      target.reference ? `RÉF. ${target.reference}` : '',
+      target.edition || '',
+      target.rarity || '',
+      target.grade!=null ? `GRADE ${target.grade}` : '',
+      target.power!=null ? `POWER ${target.power}` : '',
+      target.shield!=null ? `SHIELD ${target.shield}` : ''
+    ].filter(Boolean).join(' • ');
+    await invoke('set_overlay_card',{card:{
+      visible:true,
+      name:target.name,
+      subtitle,
+      image_url:target.image_url,
+      atk:target.atk ?? null,
+      def:target.def ?? null,
+      badge:'CARTE SCANNÉE'
+    }});
   }
 
   async function showOnOverlay(){ if(!card) return; await showCardOnOverlay(card); setToast('Overlay mis à jour'); }
@@ -470,7 +532,11 @@ export default function App(){
     }else if(kind==='naruto-edition'){
       zx=r.x+Math.floor(r.w*.48); zy=r.y+Math.floor(r.h*.72); zw=Math.floor(r.w*.52); zh=Math.floor(r.h*.28);
     }else if(kind==='top-wide'){
-      zx=r.x; zy=r.y; zw=r.w; zh=Math.floor(r.h*.32);
+      zx=r.x+Math.floor(r.w*.04); zy=r.y+Math.floor(r.h*.02); zw=Math.floor(r.w*.92); zh=Math.floor(r.h*.20);
+    }else if(kind==='name-wide'){
+      zx=r.x+Math.floor(r.w*.03); zy=r.y+Math.floor(r.h*.02); zw=Math.floor(r.w*.94); zh=Math.floor(r.h*.16);
+    }else if(kind==='bottom-code'){
+      zx=r.x; zy=r.y+Math.floor(r.h*.82); zw=r.w; zh=Math.floor(r.h*.18);
     }else if(kind==='bottom-wide'){
       zx=r.x; zy=r.y+Math.floor(r.h*.55); zw=r.w; zh=Math.floor(r.h*.45);
     }else if(kind==='card-full'){
@@ -716,42 +782,53 @@ export default function App(){
 
   function parseUniversalCard(fullText, topText, bottomText, imageUrl){
     const full=String(fullText || '').replace(/\r/g,'').trim();
-    const topLines=String(topText || '').split(/\n+/).map(cleanOcrText).filter(x=>x.length>=2 && x.length<=70);
-    const allLines=full.split(/\n+/).map(cleanOcrText).filter(Boolean);
-    const reject=/^(AUTO|ACT|MAIN|GRADE|BOOST|INTERCEPT|NORMAL UNIT|TRIGGER UNIT|ATK|DEF|POWER|SHIELD|CRITICAL|CARTE|MONSTER|SPELL|TRAP)$/i;
-    let name=topLines.find(x=>/[A-Za-zÀ-ÿ]{3}/.test(x) && !reject.test(x)) || allLines.find(x=>/[A-Za-zÀ-ÿ]{3}/.test(x) && !reject.test(x)) || 'Carte scannée';
-    name=name.slice(0,90);
+    const allLines=ocrLines(full);
+    const name=pickCardName(topText,fullText).slice(0,90);
 
-    const compact=`${fullText || ''} ${bottomText || ''}`.replace(/[–—]/g,'-');
-    const ref=extractGenericReference(compact) || extractYgoPasscode(compact) || '';
-    const number=(compact.match(/\b\d{1,4}\s*\/\s*\d{1,4}\s*[A-Z]{0,3}\b/i)||[])[0] || '';
-    const edition=(compact.match(/\b(?:1(?:ER|RE|ÈRE|ERE|ST)\s*É?DITION|2(?:E|ÈME|EME)\s*É?DITION|FIRST EDITION|SECOND EDITION)\b/i)||[])[0] || '';
+    const compact=`${bottomText || ''} ${fullText || ''}`.replace(/[–—]/g,'-');
+    const ygoPass=extractYgoPasscode(bottomText || '');
+    const vanguardRef=extractVanguardCode(bottomText || '');
+    const genericRef=extractGenericReference(bottomText || '');
+    const number=(String(bottomText || '').match(/\b\d{1,3}\s*\/\s*\d{1,3}\s*[A-Z]?\b/i)||[])[0] || '';
+
+    let ref='';
+    if(selectedTcg==='ygo') ref=ygoPass || genericRef;
+    else if(selectedTcg==='vanguard') ref=vanguardRef || genericRef;
+    else if(selectedTcg==='naruto') ref=extractNarutoNumber(bottomText || '') || number.replace(/\s+/g,'');
+    else ref=genericRef || number.replace(/\s+/g,'');
+
+    const edition=(compact.match(/\b(?:1(?:ER|RE|ÈRE|ERE|ST)\s*É?DITION|2(?:E|ÈME|EME|ND)\s*É?DITION|FIRST EDITION|SECOND EDITION)\b/i)||[])[0] || '';
     const rarity=(compact.match(/\b(?:COMMON|RARE|SUPER RARE|ULTRA RARE|SECRET RARE|MYTHIC|LEGENDARY|PROMO|RRR|RR|SR|UR|SEC|SP)\b/i)||[])[0] || '';
-    const atk=(compact.match(/\bATK\s*[\/:]?\s*(\d{1,6})\b/i)||[])[1];
-    const def=(compact.match(/\bDEF\s*[\/:]?\s*(\d{1,6})\b/i)||[])[1];
-    const power=(compact.match(/\bPOWER\s*[\/:]?\s*(\d{1,6})\b/i)||[])[1];
-    const shield=(compact.match(/\bSHIELD\s*[\/:]?\s*(\d{1,6})\b/i)||[])[1];
+    const atk=(compact.match(/\bATK\s*[\/:]?\s*(\d{2,6})\b/i)||[])[1];
+    const def=(compact.match(/\bDEF\s*[\/:]?\s*(\d{2,6})\b/i)||[])[1];
+    const power=(compact.match(/\bPOWER\s*[\/:]?\s*(\d{3,6})\b/i)||[])[1];
+    const shield=(compact.match(/\bSHIELD\s*[\/:]?\s*(\d{3,6})\b/i)||[])[1];
     const grade=(compact.match(/\bGRADE\s*[\/:]?\s*(\d{1,2})\b/i)||[])[1];
 
     const details=[];
     if(ref) details.push(`Réf. ${ref}`);
-    else if(number) details.push(`N° ${number.replace(/\s+/g,'')}`);
     if(edition) details.push(edition);
     if(rarity) details.push(rarity);
     if(power) details.push(`POWER ${power}`);
     if(shield) details.push(`SHIELD ${shield}`);
     if(grade) details.push(`GRADE ${grade}`);
 
+    // Do not repeat the title/reference as if it were card rules.
+    const descLines=allLines
+      .filter(line=>similarity(line,name)<0.72)
+      .filter(line=>!ref || !normalizeCardText(line).includes(normalizeCardText(ref)))
+      .slice(0,8);
+
     return {
       name,
-      description: allLines.join(' • ').slice(0,900),
+      description:descLines.join(' • ').slice(0,700),
       card_type:'Carte scannée',
-      attribute:details.slice(0,3).join(' • ') || 'Lecture visuelle',
+      attribute:details.slice(0,3).join(' • ') || 'Lecture directe',
       race:details.slice(3).join(' • '),
       atk:atk ? Number(atk) : (power ? Number(power) : null),
       def:def ? Number(def) : (shield ? Number(shield) : null),
       image_url:imageUrl,
-      reference:ref || number.replace(/\s+/g,''),
+      reference:ref,
       edition,
       rarity,
       power:power ? Number(power) : null,
@@ -778,16 +855,17 @@ export default function App(){
       }
 
       const worker=await getVisionWorker();
-      const topRead=await recognizeZone(worker,'top-wide','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÄÇÉÈÊËÍÎÏÓÔÖÙÛÜ0123456789-/:.!? ’\'');
-      const bottomRead=await recognizeZone(worker,'bottom-wide','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÄÇÉÈÊËÍÎÏÓÔÖÙÛÜ0123456789-/:.!? ’\'');
+      const topRead=await recognizeZone(worker,'name-wide','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÄÇÉÈÊËÍÎÏÓÔÖÙÛÜ0123456789-/:.!? ’\'');
+      const bottomRead=await recognizeZone(worker,'bottom-code','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÄÇÉÈÊËÍÎÏÓÔÖÙÛÜ0123456789-/:.!? ’\'');
       const fullRead=await recognizeZone(worker,'card-full','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÄÇÉÈÊËÍÎÏÓÔÖÙÛÜ0123456789-/:.!?+()[] ’\'');
-      const confidence=Math.round((Number(topRead.confidence||0)*.38)+(Number(bottomRead.confidence||0)*.27)+(Number(fullRead.confidence||0)*.35));
+      const confidence=Math.round((Number(topRead.confidence||0)*.50)+(Number(bottomRead.confidence||0)*.30)+(Number(fullRead.confidence||0)*.20));
       const capture=captureCardImage();
       const found=parseUniversalCard(fullRead.text,topRead.text,bottomRead.text,capture);
       const readable=cleanOcrText(`${topRead.text} ${bottomRead.text} ${fullRead.text}`);
 
       setLastOcr(`${confidence}% • ${found.reference || 'référence non lue'} • ${found.name}`);
-      if(!readable || found.name==='Carte scannée' || confidence<25){
+      const namePlausible=found.name!=='Carte scannée' && scoreNameLine(found.name,0)>0;
+      if(!readable || !namePlausible || confidence<32){
         if(!automatic) throw new Error('Texte insuffisamment lisible. Rapproche la carte et garde-la immobile.');
         return;
       }
