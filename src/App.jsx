@@ -111,7 +111,7 @@ export default function App(){
   const [deviceId,setDeviceId] = useState('');
   const [camFps,setCamFps] = useState(0);
   const [card,setCard] = useState(null);
-  const [query,setQuery] = useState('Dragon Blanc');
+  const [query,setQuery] = useState('');
   const [searching,setSearching] = useState(false);
   const [toast,setToast] = useState('');
   const [settingsOpen,setSettingsOpen] = useState(false);
@@ -875,6 +875,23 @@ export default function App(){
         const genericRef=extractGenericReference(`${refRead.text || ''} ${fullRead.text || ''}`);
         const ocrName=pickOcrSearchCandidate(fullRead.text);
 
+        // Le scanner visuel renvoie plusieurs candidats. On ne prend plus aveuglément
+        // le premier : le nom et la référence lus par OCR servent à reclasser les résultats.
+        if(result?.candidates?.length){
+          const ranked=result.candidates.map(c=>{
+            const ocr=ocrCardMatchScore(c.card,fullRead.text,`${genericRef} ${refRead.text || ''}`);
+            const visual=Number(c.score || 0);
+            const combined=Math.min(100,Math.round(visual*.78+ocr*.22));
+            return {...c,ocr,combined};
+          }).sort((a,b)=>b.combined-a.combined);
+          const best=ranked[0];
+          if(best){
+            result={...result,...best,candidates:result.candidates};
+            found=best.card;
+            confidence=best.combined;
+          }
+        }
+
         // Si le moteur visuel ne répond pas, on tente une récupération API à partir du code/nom OCR.
         if(!found){
           try{
@@ -898,9 +915,10 @@ export default function App(){
 
         detectedCode=String(found?.id || result?.product_id || genericRef || '');
         const ocrMatch=ocrCardMatchScore(found,fullRead.text,`${genericRef} ${refRead.text || ''}`);
-        const visualScore=Number(result?.score || confidence || 0);
+        const visualScore=Number(result?.score || 0);
+        const hybridScore=Number(result?.combined || confidence || visualScore || 0);
         // Le score final conserve le visuel comme signal principal et ajoute la confirmation OCR.
-        confidence=Math.min(100,Math.round(Math.max(visualScore,visualScore*0.82+ocrMatch*0.18)));
+        confidence=Math.min(100,Math.round(Math.max(hybridScore,visualScore*0.78+ocrMatch*0.22)));
 
         found={
           ...found,
@@ -1073,11 +1091,11 @@ export default function App(){
 
   return <div className="app">
     <header className="topbar">
-      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.13</span></div></div>
+      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.14</span></div></div>
       <div className="header-update" title="Mises à jour de TCG STREAM TOOL">
         <div className="header-update-versions">
           <strong>MISE À JOUR</strong>
-          <span>Actuelle : <b>{release?.current || '1.0.13'}</b></span>
+          <span>Actuelle : <b>{release?.current || '1.0.14'}</b></span>
           <span>Dernière : <b>{nativeUpdate?.version || release?.latest || '—'}</b></span>
         </div>
         {(nativeUpdate || release?.update_available) ? (
