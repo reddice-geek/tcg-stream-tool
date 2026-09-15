@@ -56,18 +56,10 @@ pub struct CardResult {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ScanCandidate {
-    pub card: CardResult,
-    pub score: f64,
-    pub product_id: u64,
-}
-
-#[derive(Debug, Serialize)]
 pub struct UniversalScanResult {
     pub card: CardResult,
     pub score: f64,
     pub product_id: u64,
-    pub candidates: Vec<ScanCandidate>,
 }
 
 #[derive(Debug, Serialize)]
@@ -324,37 +316,19 @@ async fn scan_open_tcg(game: String, image_data_url: String) -> Result<Universal
         .send().await.map_err(|e| format!("Scanner visuel indisponible : {}",e))?;
     if !scan.status().is_success() { return Err(format!("Scanner visuel HTTP {}",scan.status())); }
     let scan_json: Value = scan.json().await.map_err(|e| e.to_string())?;
-    let results = scan_json.get("results").and_then(Value::as_array)
+    let best = scan_json.get("results").and_then(Value::as_array).and_then(|a| a.first())
         .ok_or_else(|| "Aucune correspondance visuelle trouvée pour cette carte".to_string())?;
+    let product_id = best.get("product_id").and_then(Value::as_u64)
+        .ok_or_else(|| "Réponse scanner sans identifiant produit".to_string())?;
+    let score = best.get("score").and_then(Value::as_f64)
+        .or_else(|| best.get("score").and_then(Value::as_u64).map(|x| x as f64)).unwrap_or(0.0);
 
-    // On récupère plusieurs fiches au lieu de faire confiance au premier résultat.
-    // Le frontend recroise ensuite ces candidats avec l'OCR du nom et de la référence.
-    let mut candidates: Vec<ScanCandidate> = Vec::new();
-    for item in results.iter().take(5) {
-        let Some(product_id) = item.get("product_id").and_then(Value::as_u64) else { continue; };
-        let score = item.get("score").and_then(Value::as_f64)
-            .or_else(|| item.get("score").and_then(Value::as_u64).map(|x| x as f64)).unwrap_or(0.0);
-        let product_url = format!("https://openapi.tcgtracking.com/v1/products/{}", product_id);
-        let Ok(product_resp) = client.get(product_url).send().await else { continue; };
-        if !product_resp.status().is_success() { continue; }
-        let Ok(product_json) = product_resp.json::<Value>().await else { continue; };
-        let card = open_product_to_card(&game, &product_json);
-        candidates.push(ScanCandidate { card, score, product_id });
-    }
-
-    if candidates.is_empty() { return Err("Le scanner a trouvé des candidats mais aucune fiche carte n'a pu être récupérée".into()); }
-    candidates.sort_by(|a,b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-    let best = &candidates[0];
-    Ok(UniversalScanResult {
-        card: CardResult {
-            id: best.card.id.clone(), name: best.card.name.clone(), card_type: best.card.card_type.clone(),
-            description: best.card.description.clone(), image_url: best.card.image_url.clone(), atk: best.card.atk,
-            def: best.card.def, level: best.card.level, attribute: best.card.attribute.clone(), race: best.card.race.clone(),
-        },
-        score: best.score,
-        product_id: best.product_id,
-        candidates,
-    })
+    let product_url = format!("https://openapi.tcgtracking.com/v1/products/{}", product_id);
+    let product_resp = client.get(product_url).send().await.map_err(|e| e.to_string())?;
+    if !product_resp.status().is_success() { return Err(format!("Fiche carte HTTP {}",product_resp.status())); }
+    let product_json: Value = product_resp.json().await.map_err(|e| e.to_string())?;
+    let card = open_product_to_card(&game, &product_json);
+    Ok(UniversalScanResult { card, score, product_id })
 }
 
 fn pokemon_card_from_value(card: &Value) -> CardResult {
