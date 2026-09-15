@@ -469,7 +469,7 @@ export default function App(){
 
   async function showCardOnOverlay(target=card){
     if(!target) return;
-    await invoke('set_overlay_card',{card:{visible:true,name:target.name,subtitle:[target.card_type,target.attribute,target.race].filter(Boolean).join(' • '),image_url:target.image_url,atk:target.atk,def:target.def,badge:(TCG_LABEL[selectedTcg] || 'TCG').toUpperCase()}});
+    await invoke('set_overlay_card',{card:{visible:true,name:target.name,subtitle:[target.card_type,target.attribute,target.race].filter(Boolean).join(' • '),image_url:target.image_url,atk:target.atk,def:target.def,badge:(TCG_LABEL[target.detected_game || selectedTcg] || 'TCG').toUpperCase()}});
   }
 
   async function showOnOverlay(){ if(!card) return; await showCardOnOverlay(card); setToast('Overlay mis à jour'); }
@@ -523,6 +523,10 @@ export default function App(){
       zx=r.x; zy=r.y+Math.floor(r.h*.60); zw=Math.floor(r.w*.72); zh=Math.floor(r.h*.40);
     }else if(kind==='naruto-edition'){
       zx=r.x+Math.floor(r.w*.48); zy=r.y+Math.floor(r.h*.72); zw=Math.floor(r.w*.52); zh=Math.floor(r.h*.28);
+    }else if(kind==='bottom-wide'){
+      zx=r.x; zy=r.y+Math.floor(r.h*.55); zw=r.w; zh=Math.floor(r.h*.45);
+    }else if(kind==='card-full'){
+      zx=r.x; zy=r.y; zw=r.w; zh=r.h;
     }
 
     const canvas=document.createElement('canvas');
@@ -789,8 +793,34 @@ export default function App(){
       if(selectedTcg==='naruto'){
         const worker=await getVisionWorker();
 
+        // Sécurité inter-TCG : si l'utilisateur a laissé Naruto sélectionné mais présente
+        // une Yu-Gi-Oh!, on lit d'abord le passcode 8 chiffres et on le confirme par API.
+        // Cela évite d'essayer d'interpréter une carte YGO comme une référence Naruto x/130.
+        const ygoPassRead=await recognizeBest(
+          worker,
+          ['ygo-passcode','ygo-passcode-wide','bottom-left'],
+          '0123456789OQDIL|!ZSG B',
+          extractYgoPasscode
+        );
+        if(ygoPassRead.code){
+          try{
+            const ygoCard=await invoke('search_ygo_by_id',{passcode:ygoPassRead.code});
+            if(ygoCard?.name){
+              confidence=Math.max(88,Number(ygoPassRead.confidence || 0));
+              detectedCode=ygoPassRead.code;
+              found={
+                ...ygoCard,
+                detected_game:'ygo',
+                source:'Détection automatique du TCG • passcode Yu-Gi-Oh! confirmé par API'
+              };
+              setLastOcr(`${detectedCode} • ${Math.round(confidence)}% • Yu-Gi-Oh! confirmé`);
+            }
+          }catch{/* ce n'est pas une Yu-Gi-Oh! confirmée : continuer avec Naruto */}
+        }
+
         // Naruto Mythos : le numéro n'est pas toujours au même pixel selon cadrage/édition.
         // On tente plusieurs bandes basses puis on lit aussi toute la carte pour récupérer le nom.
+        if(!found){
         const numberRead=await recognizeBest(
           worker,
           ['naruto-number','naruto-number-wide','bottom-left','bottom-wide'],
@@ -845,6 +875,8 @@ export default function App(){
         found.id=entry.number;
         found.number=entry.number;
         found.set=entry.set;
+        found.detected_game='naruto';
+        }
       }else{
         // Reconnaissance hybride : 1) image complète via moteur visuel public,
         // 2) OCR local du nom / numéro, 3) fiche API complète, 4) validation croisée.
@@ -1184,7 +1216,7 @@ export default function App(){
         <div className="card-panel">
           {card ? <>
             <div className="card-art">{card.image_url?<img src={card.image_url} alt=""/>:<span>CARTE</span>}</div>
-            <div className="card-info"><div className="goldline">♛ {TCG_LABEL[selectedTcg] || 'TCG'} • DÉTECTION PAR CODE</div><h1>{card.name}</h1><div className="stats"><span>{card.atk!=null?`ATK ${card.atk}`:(card.card_type || 'CARTE')}</span><span>{card.def!=null?`DEF ${card.def}`:(card.attribute || 'IDENTIFIÉE')}</span></div><p>{card.description?.slice(0,240)}{card.description?.length>240?'…':''}</p><small>{card.card_type} • {card.attribute} • {card.race}</small><div className="actions"><button className="primary" onClick={showOnOverlay} type="button">{tr.send}</button><button className="ghost" onClick={hideOverlay} type="button">{tr.hide}</button></div></div>
+            <div className="card-info"><div className="goldline">♛ {TCG_LABEL[card?.detected_game || selectedTcg] || 'TCG'} • DÉTECTION PAR CODE</div><h1>{card.name}</h1><div className="stats"><span>{card.atk!=null?`ATK ${card.atk}`:(card.card_type || 'CARTE')}</span><span>{card.def!=null?`DEF ${card.def}`:(card.attribute || 'IDENTIFIÉE')}</span></div><p>{card.description?.slice(0,240)}{card.description?.length>240?'…':''}</p><small>{card.card_type} • {card.attribute} • {card.race}</small><div className="actions"><button className="primary" onClick={showOnOverlay} type="button">{tr.send}</button><button className="ghost" onClick={hideOverlay} type="button">{tr.hide}</button></div></div>
           </> : <div className="empty-card">Recherchez ou scannez une carte pour l’afficher ici et sur votre overlay OBS.</div>}
         </div>
       </section>
