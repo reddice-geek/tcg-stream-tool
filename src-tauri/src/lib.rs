@@ -426,6 +426,70 @@ async fn search_card_universal(game: String, query: String, language: Option<Str
     }
 }
 
+
+fn html_meta_content(html: &str, property: &str) -> String {
+    for marker in [format!("property=\"{}\"", property), format!("name=\"{}\"", property)] {
+        if let Some(pos)=html.find(&marker) {
+            let start=pos.saturating_sub(220);
+            let end=(pos+700).min(html.len());
+            let chunk=&html[start..end];
+            if let Some(cp)=chunk.find("content=\"") {
+                let rest=&chunk[cp+9..];
+                if let Some(q)=rest.find('"') { return rest[..q].replace("&quot;","\"").replace("&amp;","&").replace("&#x27;","'"); }
+            }
+        }
+    }
+    String::new()
+}
+
+fn naruto_ref_candidates(reference: &str) -> Vec<String> {
+    let r=reference.trim().to_uppercase().replace(' ', "");
+    if r.starts_with("KS-") { return vec![r]; }
+    let digits=r.split('/').next().unwrap_or("").trim_start_matches('0');
+    if digits.is_empty() || !digits.chars().all(|c|c.is_ascii_digit()) { return vec![]; }
+    let n: u16=digits.parse().unwrap_or(0);
+    if n==0 { return vec![]; }
+    let base=format!("KS-{:03}",n);
+    vec![base.clone(),format!("{}-V",base),format!("{}-ES",base),format!("{}-SV",base),format!("{}-A",base)]
+}
+
+fn naruto_match_score(html: &str, ocr: &str, code: &str) -> i32 {
+    let h=norm(html);
+    let o=norm(ocr);
+    let mut score=if h.contains(&norm(code)){30}else{0};
+    for w in o.split_whitespace().filter(|w|w.len()>=4).take(18) {
+        if h.contains(w) { score+=4; }
+    }
+    if code.ends_with("-ES") && (o.contains("invocation") || o.contains("summoning")) { score+=35; }
+    if code.ends_with("-V") && (o.contains("ichiraku") || o.contains("nouilles")) { score+=35; }
+    score
+}
+
+#[tauri::command]
+async fn search_naruto_online(reference: String, ocr_text: String) -> Result<CardResult, String> {
+    let candidates=naruto_ref_candidates(&reference);
+    if candidates.is_empty() { return Err("Référence Naruto illisible".into()); }
+    let client=reqwest::Client::builder().timeout(std::time::Duration::from_secs(12)).user_agent("TCG-STREAM-TOOL/1.0.14").build().map_err(|e|e.to_string())?;
+    let mut best: Option<(i32,CardResult)>=None;
+    for code in candidates {
+        let url=format!("https://www.narutomythos.com/fr/cards/{}",code);
+        let resp=match client.get(&url).send().await { Ok(r)=>r, Err(_)=>continue };
+        if !resp.status().is_success() { continue; }
+        let html=match resp.text().await { Ok(t)=>t, Err(_)=>continue };
+        if !norm(&html).contains(&norm(&code)) { continue; }
+        let og_title=html_meta_content(&html,"og:title");
+        let image=html_meta_content(&html,"og:image");
+        let title=if og_title.is_empty(){code.clone()}else{og_title.split(" | ").next().unwrap_or(&og_title).trim().to_string()};
+        let mut parts=title.splitn(2," — ");
+        let name=parts.next().unwrap_or(&title).trim().to_string();
+        let subtitle=parts.next().unwrap_or("").trim().to_string();
+        let score=naruto_match_score(&html,&ocr_text,&code);
+        let card=CardResult{id:code.clone(),name,card_type:"Naruto Mythos".into(),description:subtitle,image_url:image,atk:None,def:None,level:None,attribute:"Carte vérifiée en ligne".into(),race:"Konoha Shidō".into()};
+        if best.as_ref().map(|b|score>b.0).unwrap_or(true){best=Some((score,card));}
+    }
+    best.map(|(_,c)|c).ok_or_else(||format!("Aucune carte Naruto Mythos confirmée en ligne pour {}",reference))
+}
+
 #[tauri::command]
 async fn search_ygo_by_id(passcode: String) -> Result<CardResult, String> {
     let code: String = passcode.chars().filter(|c| c.is_ascii_digit()).collect();
@@ -563,6 +627,7 @@ pub fn run() {
             search_vanguard_by_code,
             search_card_universal,
             scan_open_tcg,
+            search_naruto_online,
             check_latest_release,
             get_install_language
         ])
