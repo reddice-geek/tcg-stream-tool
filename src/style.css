@@ -23,3 +23,8 @@
 
 /* Résumé des mises à jour dans la barre du haut */
 .header-update{border-left:1px solid #22242b;padding-left:18px;display:flex;align-items:center;gap:12px;min-width:300px}.header-update-versions{display:grid;grid-template-columns:auto auto;column-gap:8px;row-gap:2px;align-items:center}.header-update-versions>strong{grid-column:1/-1;font-size:11px;letter-spacing:.12em;color:#f2d23b}.header-update-versions span{font-size:10px;color:#8d8d95}.header-update-versions span b{color:#f5f5f7}.header-update-btn{border:1px solid #3a3b43;background:#13141a;color:#4de391;border-radius:10px;padding:9px 11px;font-size:10px;font-weight:900;white-space:nowrap;cursor:pointer}.header-update-btn.available{background:#f2d23b;color:#111;border-color:#7a6520}.header-update-btn:disabled{opacity:.6;cursor:wait}@media(max-width:1200px){.header-update{display:none}}
+
+/* Sources API: unavailable integrations stay visibly disabled. */
+.source-row.source-disabled { opacity: .48; }
+.source-row.source-disabled b { color: #8b8f99; font-size: 11px; }
+.source-row.source-disabled .dot { background: #666b73; box-shadow: none; }
