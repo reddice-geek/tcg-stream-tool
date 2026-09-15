@@ -1038,5 +1038,185 @@
     "title": "One-Tail",
     "set": "Konoha Shidō",
     "set_code": "KS-130"
+  },
+  {
+    "number": "131/130",
+    "index": 131,
+    "name": "Tsunade",
+    "title": "Tsunade - Cinquième Hokage",
+    "set": "Konoha Shidō",
+    "set_code": "KS-131",
+    "rarity": "S"
+  },
+  {
+    "number": "132/130",
+    "index": 132,
+    "name": "Jiraya",
+    "title": "Jiraya - Dans l'Estomac du Crapaud",
+    "set": "Konoha Shidō",
+    "set_code": "KS-132",
+    "rarity": "S"
+  },
+  {
+    "number": "133/130",
+    "index": 133,
+    "name": "Naruto Uzumaki",
+    "title": "Naruto Uzumaki - Rasengan",
+    "set": "Konoha Shidō",
+    "set_code": "KS-133",
+    "rarity": "S"
+  },
+  {
+    "number": "133/130",
+    "index": 133,
+    "name": "Naruto Uzumaki",
+    "title": "Naruto Uzumaki - Ninpô ! Invocation !",
+    "set": "Konoha Shidō",
+    "set_code": "KS-133-V",
+    "rarity": "MYTHOS"
+  },
+  {
+    "number": "133/130",
+    "index": 133,
+    "name": "Naruto Uzumaki",
+    "title": "Naruto Uzumaki - Ninja Art! Summoning Jutsu!",
+    "set": "Konoha Shidō",
+    "set_code": "KS-133-ES",
+    "rarity": "MYTHOS"
+  },
+  {
+    "number": "134/130",
+    "index": 134,
+    "name": "Kyûbi",
+    "title": "Kyûbi - Destruction",
+    "set": "Konoha Shidō",
+    "set_code": "KS-134",
+    "rarity": "S"
+  },
+  {
+    "number": "135/130",
+    "index": 135,
+    "name": "Sakura Haruno",
+    "title": "Sakura Haruno - Corps Médical du Village de la Feuille",
+    "set": "Konoha Shidō",
+    "set_code": "KS-135",
+    "rarity": "S"
+  },
+  {
+    "number": "136/130",
+    "index": 136,
+    "name": "Sasuke Uchiwa",
+    "title": "Sasuke Uchiwa - Marque Maudite du Ciel",
+    "set": "Konoha Shidō",
+    "set_code": "KS-136",
+    "rarity": "S"
+  },
+  {
+    "number": "137/130",
+    "index": 137,
+    "name": "Kakashi Hatake",
+    "title": "Kakashi Hatake - L'Éclair Pourfendeur",
+    "set": "Konoha Shidō",
+    "set_code": "KS-137",
+    "rarity": "S"
+  },
+  {
+    "number": "138/130",
+    "index": 138,
+    "name": "Orochimaru",
+    "title": "Orochimaru - Invocation, La Réincarnation des Âmes",
+    "set": "Konoha Shidō",
+    "set_code": "KS-138",
+    "rarity": "S"
+  },
+  {
+    "number": "139/130",
+    "index": 139,
+    "name": "Gaara",
+    "title": "Gaara - Le Tombeau du Désert",
+    "set": "Konoha Shidō",
+    "set_code": "KS-139",
+    "rarity": "S"
+  },
+  {
+    "number": "140/130",
+    "index": 140,
+    "name": "Itachi Uchiwa",
+    "title": "Itachi Uchiwa - Tsukuyomi",
+    "set": "Konoha Shidō",
+    "set_code": "KS-140",
+    "rarity": "S"
+  },
+  {
+    "number": "141/130",
+    "index": 141,
+    "name": "Naruto Uzumaki",
+    "title": "Naruto Uzumaki - Défiant Sasuke",
+    "set": "Konoha Shidō",
+    "set_code": "KS-141",
+    "rarity": "MYTHOS"
+  },
+  {
+    "number": "142/130",
+    "index": 142,
+    "name": "Sasuke Uchiwa",
+    "title": "Sasuke Uchiwa - Défiant Naruto",
+    "set": "Konoha Shidō",
+    "set_code": "KS-142",
+    "rarity": "MYTHOS"
+  },
+  {
+    "number": "143/130",
+    "index": 143,
+    "name": "Itachi Uchiwa",
+    "title": "Itachi Uchiwa - Traquant Naruto",
+    "set": "Konoha Shidō",
+    "set_code": "KS-143",
+    "rarity": "MYTHOS"
+  },
+  {
+    "number": "144/130",
+    "index": 144,
+    "name": "Kisame Hoshigaki",
+    "title": "Kisame Hoshigaki - Absorption du Chakra",
+    "set": "Konoha Shidō",
+    "set_code": "KS-144",
+    "rarity": "MYTHOS"
+  },
+  {
+    "number": "145/130",
+    "index": 145,
+    "name": "Naruto Uzumaki",
+    "title": "Naruto Uzumaki - Équipe 7 originelle",
+    "set": "Konoha Shidō",
+    "set_code": "KS-145",
+    "rarity": "MYTHOS"
+  },
+  {
+    "number": "146/130",
+    "index": 146,
+    "name": "Sasuke Uchiwa",
+    "title": "Sasuke Uchiwa - Équipe 7 originelle",
+    "set": "Konoha Shidō",
+    "set_code": "KS-146",
+    "rarity": "MYTHOS"
+  },
+  {
+    "number": "147/130",
+    "index": 147,
+    "name": "Sakura Haruno",
+    "title": "Sakura Haruno - Équipe 7 originelle",
+    "set": "Konoha Shidō",
+    "set_code": "KS-147",
+    "rarity": "MYTHOS"
+  },
+  {
+    "number": "148/130",
+    "index": 148,
+    "name": "Kakashi Hatake",
+    "title": "Kakashi Hatake - Équipe 7 originelle",
+    "set": "Konoha Shidō",
+    "set_code": "KS-148",
+    "rarity": "MYTHOS"
   }
 ]
