@@ -792,103 +792,45 @@ export default function App(){
 
       if(selectedTcg==='naruto'){
         const worker=await getVisionWorker();
-
-        // Sécurité inter-TCG : si l'utilisateur a laissé Naruto sélectionné mais présente
-        // une Yu-Gi-Oh!, on lit d'abord le passcode 8 chiffres et on le confirme par API.
-        // Cela évite d'essayer d'interpréter une carte YGO comme une référence Naruto x/130.
-        const ygoPassRead=await recognizeBest(
-          worker,
-          ['ygo-passcode','ygo-passcode-wide','bottom-left'],
-          '0123456789OQDIL|!ZSG B',
-          extractYgoPasscode
-        );
-        if(ygoPassRead.code){
-          try{
-            const ygoCard=await invoke('search_ygo_by_id',{passcode:ygoPassRead.code});
-            if(ygoCard?.name){
-              confidence=Math.max(88,Number(ygoPassRead.confidence || 0));
-              detectedCode=ygoPassRead.code;
-              found={
-                ...ygoCard,
-                detected_game:'ygo',
-                source:'Détection automatique du TCG • passcode Yu-Gi-Oh! confirmé par API'
-              };
-              setLastOcr(`${detectedCode} • ${Math.round(confidence)}% • Yu-Gi-Oh! confirmé`);
-            }
-          }catch{/* ce n'est pas une Yu-Gi-Oh! confirmée : continuer avec Naruto */}
-        }
-
-        // Naruto Mythos : le numéro n'est pas toujours au même pixel selon cadrage/édition.
-        // On tente plusieurs bandes basses puis on lit aussi toute la carte pour récupérer le nom.
-        if(!found){
         const numberRead=await recognizeBest(
           worker,
           ['naruto-number','naruto-number-wide','bottom-left','bottom-wide'],
-          '0123456789/OQIL',
-          extractNarutoNumber
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/OQIL',
+          (text)=>extractNarutoNumber(text) || extractGenericReference(text)
         );
-        const editionRead=await recognizeZone(
-          worker,
-          'naruto-edition',
-          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789èéÈÉ'
-        );
-        const fullRead=await recognizeZone(
-          worker,
-          'card-full',
-          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -éèêàùçÉÈÊÀÙÇ/'
-        );
+        const fullRead=await recognizeZone(worker,'card-full','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -éèêàùçÉÈÊÀÙÇ/!?."');
+        const refRead=await recognizeZone(worker,'bottom-wide','ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/: ');
+        const allOcr=`${fullRead.text || ''} ${refRead.text || ''} ${numberRead.text || ''}`;
+        detectedCode=numberRead.code || extractNarutoNumber(allOcr) || extractGenericReference(allOcr) || '';
+        confidence=Math.max(Number(numberRead.confidence||0),Number(fullRead.confidence||0));
+        setLastOcr(`${detectedCode || 'référence ?'} • ${Math.round(confidence)}% | ${cleanOcrText(fullRead.text || '') || 'nom ?'}`);
 
-        detectedCode=numberRead.code || extractNarutoNumber(fullRead.text) || '';
-        confidence=Math.max(numberRead.confidence || 0, detectedCode ? (fullRead.confidence || 0) : 0);
-
-        let entry=null;
-        const combinedNarutoOcr=`${fullRead.text || ''} ${numberRead.text || ''}`;
-        const m=detectedCode.match(/^(\d{1,3})\/130$/);
-        if(m){
-          const idx=Number(m[1]);
-          const candidates=narutoSet1.filter(x=>x.index===idx);
-          if(candidates.length===1) entry=candidates[0];
-          else if(candidates.length>1){
-            const hay=normalizeNarutoName(combinedNarutoOcr);
-            let best=null, bestScore=-1;
-            for(const c of candidates){
-              const words=normalizeNarutoName(`${c.name || ''} ${c.title || ''}`).split(' ').filter(w=>w.length>=4);
-              const score=words.length ? words.filter(w=>hay.includes(w)).length/words.length : 0;
-              if(score>bestScore){ best=c; bestScore=score; }
-            }
-            entry=best || candidates[0];
-          }
-        }
-        if(!entry){
-          entry=narutoNameFromOcr(combinedNarutoOcr);
-          if(entry) detectedCode=entry.number;
-        }
-
-        const rawPreview=cleanOcrText(fullRead.text || numberRead.text || '');
-        setLastOcr(`${detectedCode || 'code ?'} • ${Math.round(confidence)}% | ${rawPreview || 'nom ?'}`);
-
-        if(!entry){
+        if(!detectedCode){
           if(automatic) return;
-          throw new Error('Carte Naruto non reconnue. Cadre toute la carte : le logiciel lit le numéro x/130, y compris les cartes Secret/Mythos au-delà de 130, puis compare aussi le nom.');
+          throw new Error('Référence Naruto non lisible. Cadre toute la carte et garde le bas de la carte bien visible.');
         }
 
-        // Pour Naruto, la validation finale se fait contre la base Naruto locale, y compris les cartes hors série 130.
-        const stableKey=`naruto:${entry.index}`;
+        try{
+          found=await invoke('search_naruto_online',{reference:detectedCode,ocrText:allOcr});
+        }catch(err){
+          if(automatic) return;
+          throw new Error(`Carte non confirmée par la base Naruto en ligne : ${String(err)}`);
+        }
+        if(!found?.name){
+          if(automatic) return;
+          throw new Error('La source Naruto n’a pas confirmé cette carte. L’overlay reste inchangé.');
+        }
+
+        found={...found,image_url:found.image_url || captureCardImage(),detected_game:'naruto',source:'Vision locale + vérification Naruto Mythos en ligne',reference:found.id || detectedCode,ocr_reference:detectedCode,ocr_name:cleanOcrText(fullRead.text || '')};
+        const stableKey=`naruto-online:${found.id || detectedCode}`;
         if(automatic){
-          if(confidence<35) return;
+          if(confidence<45) return;
           if(!stableAutoCandidate(stableKey)){
-            setLastDetected(`Carte lue • vérification 1/2 • ${entry.title}`);
+            setLastDetected(`Carte trouvée • vérification 1/2 • ${found.name}`);
             return;
           }
-        }else if(confidence<35 && !(await acceptLowConfidence(`${entry.title} (${entry.number})`,confidence))){
+        }else if(confidence<35 && !(await acceptLowConfidence(`${found.name} (${found.id || detectedCode})`,confidence))){
           return;
-        }
-
-        found=makeNarutoCard(entry,editionRead.text,captureCardImage());
-        found.id=entry.number;
-        found.number=entry.number;
-        found.set=entry.set;
-        found.detected_game='naruto';
         }
       }else{
         // Reconnaissance hybride : 1) image complète via moteur visuel public,
@@ -1252,7 +1194,7 @@ export default function App(){
           <label className="checkline"><input type="checkbox" checked={detectionOn} onChange={e=>setDetectionOn(e.target.checked)}/><span>Détection automatique — analyser la carte et son code</span></label>
           <button className="primary full scan-main" disabled={!cameraOn || detecting} onClick={()=>scanCameraCard({automatic:false})}>{detecting?'Analyse…':'SCANNER MAINTENANT'}</button>
           <label className="checkline"><input type="checkbox" checked={autoOverlay} onChange={e=>setAutoOverlay(e.target.checked)}/><span>{tr.autoOverlay}</span></label>
-          <small>{selectedTcg==='naruto'?'Naruto Mythos : lit le numéro x/130 + l’édition et vérifie la base locale.':'IA hybride : analyse visuelle de la carte entière + OCR du nom/numéro + vérification API. Le nom, la référence, le set et l’image sont ensuite affichés dans l’application et dans OBS.'}</small>
+          <small>{selectedTcg==='naruto'?'Naruto Mythos : la vision lit la carte réelle, puis la référence est vérifiée en ligne avant tout affichage OBS.':'IA hybride : analyse visuelle de la carte entière + OCR du nom/numéro + vérification API. Le nom, la référence, le set et l’image sont ensuite affichés dans l’application et dans OBS.'}</small>
           <div className="ocr-box"><span>OCR / CODE</span><b>{lastOcr || '—'}</b></div>
           {lastDetected && <div className="detected-box"><span>{tr.detected}</span><b>{lastDetected}</b></div>}
         </div>
