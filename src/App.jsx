@@ -30,9 +30,7 @@ const TCG_OPTIONS = [
 
 const TCG_LABEL = Object.fromEntries(TCG_OPTIONS);
 
-const LOCAL_SOURCE_INFO = {
-  naruto: { status:'130 LOCAL', connected:true }
-};
+const LOCAL_SOURCE_INFO = {};
 
 function fmtCount(n){ if(n == null) return '—'; return new Intl.NumberFormat().format(n); }
 function cleanOcrText(text){
@@ -1131,12 +1129,11 @@ export default function App(){
           <div className="panel-title">▰ {tr.sources}</div>
           {TCG_OPTIONS.map(([id,name])=>{
             const a=apis.find(x=>x.id===id);
-            const local=LOCAL_SOURCE_INFO[id];
-            const connected=a ? a.connected : Boolean(local?.connected);
-            let value='…';
-            if(a) value=a.connected ? (a.count != null ? fmtCount(a.count) : 'API') : 'OFF';
-            else if(local?.status) value=local.status;
-            return <div className="source-row" key={id}>
+            const connected=Boolean(a?.connected);
+            const value=connected
+              ? `API DISPONIBLE${a?.count != null ? ` • ${fmtCount(a.count)} cartes` : ''}`
+              : 'API NON DISPONIBLE';
+            return <div className={connected?'source-row':'source-row source-disabled'} key={id}>
               <span><i className={connected?'dot ok':'dot'}></i>{name}</span>
               <b>{value}</b>
             </div>;
