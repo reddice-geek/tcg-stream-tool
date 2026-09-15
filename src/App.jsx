@@ -751,6 +751,41 @@ export default function App(){
     return '';
   }
 
+  function extractUniversalReference(text){
+    const raw=String(text || '').toUpperCase().replace(/[–—]/g,'-');
+    const compact=raw.replace(/\s+/g,' ');
+
+    // Références courantes lisibles directement sur les cartes.
+    const patterns=[
+      /\b\d{1,3}\s*\/\s*130\s*[A-Z]?\b/,                         // Naruto Mythos
+      /\b(?:D-|V-)?(?:BT|SS|TD|PR)\d{1,3}\s*\/\s*\d{2,4}[A-Z]{0,3}\b/, // Vanguard
+      /\b[A-Z0-9]{2,6}-[A-Z]{2,3}\d{2,4}\b/,                    // Yu-Gi-Oh set code
+      /\b\d{8}\b/,                                               // Yu-Gi-Oh passcode
+      /\b\d{1,4}\s*\/\s*\d{1,4}\s*[A-Z]?\b/                    // collector number
+    ];
+    for(const pattern of patterns){
+      const m=compact.match(pattern);
+      if(m) return m[0].replace(/\s+/g,'');
+    }
+    return '';
+  }
+
+  function cleanOcrDescription(text,name='',reference=''){
+    const nName=normalizeCardText(name);
+    const nRef=normalizeCardText(reference);
+    return ocrLines(text)
+      .filter(line=>{
+        const n=normalizeCardText(line);
+        if(!n || n.length<4) return false;
+        if(nName && similarity(line,name)>.72) return false;
+        if(nRef && n.includes(nRef)) return false;
+        return true;
+      })
+      .slice(0,8)
+      .join(' • ')
+      .slice(0,700);
+  }
+
   function ocrCardMatchScore(card, fullText, refText){
     const hay=normalizeCardText(`${fullText || ''} ${refText || ''}`);
     if(!hay) return 0;
@@ -1069,7 +1104,7 @@ export default function App(){
 
   return <div className="app">
     <header className="topbar">
-      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.15</span></div></div>
+      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.17</span></div></div>
       <div className="header-update" title="Mises à jour de TCG STREAM TOOL">
         <div className="header-update-versions">
           <strong>MISE À JOUR</strong>
