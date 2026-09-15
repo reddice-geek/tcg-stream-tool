@@ -137,64 +137,64 @@ fn set_overlay_card(shared: State<'_, OverlayShared>, card: OverlayCard) -> Resu
 async fn api_status(game: String, _api_url: Option<String>, _api_key: Option<String>) -> ApiStatus {
     let start = Instant::now();
 
-    if game == "naruto" {
-        return ApiStatus {
-            id: "naruto".into(),
-            name: "Naruto Mythos".into(),
-            connected: true,
-            latency_ms: start.elapsed().as_millis(),
-            count: Some(130),
-            detail: "Base locale Naruto Mythos Set 1".into(),
+    // SOURCES policy: only APIs explicitly integrated in TCG STREAM TOOL are enabled.
+    // All other games stay OFF until their real API is added and verified.
+    if game != "ygo" {
+        let display_name = match game.as_str() {
+            "pokemon" => "Pokémon",
+            "onepiece" => "One Piece",
+            "vanguard" => "Cardfight!! Vanguard",
+            "naruto" => "Naruto Mythos",
+            "magic" => "Magic: The Gathering",
+            "lorcana" => "Disney Lorcana",
+            "digimon" => "Digimon",
+            "dragonball" => "Dragon Ball Super",
+            "unionarena" => "Union Arena",
+            "weiss" => "Weiss Schwarz",
+            "fleshblood" => "Flesh and Blood",
+            _ => "API",
         };
-    }
-
-    let Some((game_id, display_name)) = open_tcg_game(&game) else {
         return ApiStatus {
             id: game,
-            name: "API".into(),
+            name: display_name.into(),
             connected: false,
             latency_ms: 0,
             count: None,
-            detail: "Source inconnue".into(),
+            detail: "API NON DISPONIBLE".into(),
         };
-    };
+    }
 
     let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(20))
         .user_agent("TCG-STREAM-TOOL/1.0.14")
         .build()
     {
         Ok(c) => c,
-        Err(e) => return ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:0, count:None, detail:e.to_string() },
+        Err(e) => return ApiStatus { id:game, name:"Yu-Gi-Oh!".into(), connected:false, latency_ms:0, count:None, detail:e.to_string() },
     };
 
-    let url = "https://openapi.tcgtracking.com/v1/categories";
+    // Real endpoint referenced by the PublicAPI Yu-Gi-Oh directory: YGOPRODeck v7.
+    // Fetching the catalogue means the displayed count automatically follows new cards.
+    let url = "https://db.ygoprodeck.com/api/v7/cardinfo.php";
     match client.get(url).send().await {
         Ok(resp) if resp.status().is_success() => {
             match resp.json::<Value>().await {
                 Ok(json) => {
-                    let entry = json.get("categories")
-                        .and_then(Value::as_array)
-                        .and_then(|arr| arr.iter().find(|x| x.get("id").and_then(Value::as_u64) == Some(game_id)));
-                    if let Some(cat) = entry {
-                        let count = cat.get("product_count").and_then(Value::as_u64);
-                        ApiStatus {
-                            id: game,
-                            name: display_name.into(),
-                            connected: true,
-                            latency_ms: start.elapsed().as_millis(),
-                            count,
-                            detail: "Open TCG API • catalogue utilisé par le scanner visuel".into(),
-                        }
-                    } else {
-                        ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:"Jeu absent du catalogue Open TCG".into() }
+                    let count = json.get("data").and_then(Value::as_array).map(|cards| cards.len() as u64);
+                    ApiStatus {
+                        id: "ygo".into(),
+                        name: "Yu-Gi-Oh!".into(),
+                        connected: count.is_some(),
+                        latency_ms: start.elapsed().as_millis(),
+                        count,
+                        detail: if count.is_some() { "API DISPONIBLE • YGOPRODeck v7".into() } else { "Réponse YGOPRODeck invalide".into() },
                     }
                 }
-                Err(e) => ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e.to_string() },
+                Err(e) => ApiStatus { id:"ygo".into(), name:"Yu-Gi-Oh!".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e.to_string() },
             }
         }
-        Ok(resp) => ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("Open TCG HTTP {}",resp.status()) },
-        Err(e) => ApiStatus { id:game, name:display_name.into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e.to_string() },
+        Ok(resp) => ApiStatus { id:"ygo".into(), name:"Yu-Gi-Oh!".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:format!("YGOPRODeck HTTP {}",resp.status()) },
+        Err(e) => ApiStatus { id:"ygo".into(), name:"Yu-Gi-Oh!".into(), connected:false, latency_ms:start.elapsed().as_millis(), count:None, detail:e.to_string() },
     }
 }
 
