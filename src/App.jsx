@@ -627,7 +627,7 @@ export default function App(){
     if(!m) m=compact.match(/(?:^|\D)(\d{1,3})130(?:\D|$)/);
     if(!m) return '';
     const idx=Number(m[1]);
-    return idx>=1 && idx<=130 ? `${idx}/130` : '';
+    return idx>=1 && idx<=999 ? `${idx}/130` : '';
   }
 
 
@@ -842,12 +842,25 @@ export default function App(){
         confidence=Math.max(numberRead.confidence || 0, detectedCode ? (fullRead.confidence || 0) : 0);
 
         let entry=null;
+        const combinedNarutoOcr=`${fullRead.text || ''} ${numberRead.text || ''}`;
         const m=detectedCode.match(/^(\d{1,3})\/130$/);
         if(m){
-          entry=narutoSet1.find(x=>x.index===Number(m[1])) || null;
+          const idx=Number(m[1]);
+          const candidates=narutoSet1.filter(x=>x.index===idx);
+          if(candidates.length===1) entry=candidates[0];
+          else if(candidates.length>1){
+            const hay=normalizeNarutoName(combinedNarutoOcr);
+            let best=null, bestScore=-1;
+            for(const c of candidates){
+              const words=normalizeNarutoName(`${c.name || ''} ${c.title || ''}`).split(' ').filter(w=>w.length>=4);
+              const score=words.length ? words.filter(w=>hay.includes(w)).length/words.length : 0;
+              if(score>bestScore){ best=c; bestScore=score; }
+            }
+            entry=best || candidates[0];
+          }
         }
         if(!entry){
-          entry=narutoNameFromOcr(`${fullRead.text || ''} ${numberRead.text || ''}`);
+          entry=narutoNameFromOcr(combinedNarutoOcr);
           if(entry) detectedCode=entry.number;
         }
 
@@ -856,10 +869,10 @@ export default function App(){
 
         if(!entry){
           if(automatic) return;
-          throw new Error('Carte Naruto non reconnue. Cadre toute la carte : le logiciel cherche maintenant le numéro x/130 ET le nom de la carte.');
+          throw new Error('Carte Naruto non reconnue. Cadre toute la carte : le logiciel lit le numéro x/130, y compris les cartes Secret/Mythos au-delà de 130, puis compare aussi le nom.');
         }
 
-        // Pour Naruto, la validation finale se fait contre la base locale 1..130.
+        // Pour Naruto, la validation finale se fait contre la base Naruto locale, y compris les cartes hors série 130.
         const stableKey=`naruto:${entry.index}`;
         if(automatic){
           if(confidence<35) return;
