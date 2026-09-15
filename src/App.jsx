@@ -888,7 +888,7 @@ export default function App(){
       }
 
       const worker=await getVisionWorker();
-      const allowed='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÄÇÉÈÊËÍÎÏÓÔÖÙÛÜ0123456789-/:.!?+()[] ’\\'';
+      const allowed="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÄÇÉÈÊËÍÎÏÓÔÖÙÛÜ0123456789-/:.!?+()[] ’'";
       const topRead=await recognizeZone(worker,'name-wide',allowed);
       const bottomRead=await recognizeZone(worker,'bottom-code',allowed);
       const fullRead=await recognizeZone(worker,'card-full',allowed);
