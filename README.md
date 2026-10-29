@@ -7,11 +7,11 @@ Application Windows TCG STREAM TOOL par **Reddice Geek**.
 GitHub Actions compile l'application automatiquement :
 
 - à chaque push sur `main` ou `master` : ouvrez **Actions**, puis le workflow **Build Windows EXE** et téléchargez l'artefact `TCG-STREAM-TOOL-Windows-EXE` ;
-- pour publier une version dans **Releases** : mettez à jour les numéros de version dans `package.json`, `src-tauri/tauri.conf.json` et `src-tauri/Cargo.toml`, créez un tag (par exemple `v1.0.15`) et poussez-le :
+- pour publier une version dans **Releases** : mettez à jour les numéros de version dans `package.json`, `src-tauri/tauri.conf.json` et `src-tauri/Cargo.toml`, créez un tag (par exemple `v2.0.1`) et poussez-le :
 
 ```bash
-git tag v1.0.15
-git push origin v1.0.15
+git tag v2.0.1
+git push origin v2.0.1
 ```
 
 Le workflow compile alors l'installateur Windows `.exe` et le joint à la Release GitHub. Il n'exige pas de secret de signature Tauri pour compiler l'installateur.
@@ -46,4 +46,12 @@ Ne commitez jamais le fichier PFX, son mot de passe ou sa clé privée dans le d
 
 - Sans les deux secrets, le workflow construit tout de même l'application, mais elle n'est pas signée. Ce n'est pas une correction suffisante pour Smart App Control.
 - La signature doit utiliser un certificat reconnu et une chaîne valide. Une signature valide améliore la confiance mais ne constitue pas une garantie absolue contre tous les blocages de sécurité.
-- Le workflow utilise le tag de la Release publiée. Pour reconstruire une version déjà publiée, lancez **Actions → Build Windows EXE (code signing ready) → Run workflow** et renseignez `release_tag` (par exemple `v1.0.15`).
+- Le workflow utilise le tag de la Release publiée. Pour reconstruire une version déjà publiée, lancez **Actions → Build Windows EXE (code signing ready) → Run workflow** et renseignez `release_tag` (par exemple `v2.0.1`).
+
+
+## TCG Stream Tool v2.0.1
+
+- Version de référence : `package.json`. Le script `npm run sync-version` synchronise la version Tauri et Cargo avant la compilation.
+- Scanner hybride : tentative d'identification visuelle via le service du jeu sélectionné, puis repli sur l'OCR local lorsque le service est indisponible. La reconnaissance n'est pas garantie pour tous les jeux ni toutes les éditions.
+- Thèmes disponibles : Cyber Neon, Obsidian Gold, Arcade Violet et Emerald Stream. Le thème est mémorisé localement.
+- L'identification visuelle distante envoie une capture de la carte au service de scan externe ; utiliser l'OCR local n'implique pas l'envoi de cette image si le service distant n'est pas sollicité.

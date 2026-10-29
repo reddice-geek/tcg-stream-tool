@@ -1,6 +1,6 @@
 [package]
 name = "tcg-stream-tool"
-version = "1.0.15"
+version = "2.0.1"
 edition = "2021"
 
 [lib]

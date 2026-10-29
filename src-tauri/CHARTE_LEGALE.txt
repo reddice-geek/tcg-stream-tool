@@ -1,6 +1,6 @@
 CHARTE D’UTILISATION ET LICENCE UTILISATEUR FINAL (EULA)
 TCG STREAM TOOL
-Version 1.0.15 — 29 octobre 2026
+Version 2.0.1 — 29 octobre 2026
 © 2026 Reddice Geek — Tous droits réservés pour les éléments appartenant à Reddice Geek.
 
 1. ÉDITEUR ET CONTACT

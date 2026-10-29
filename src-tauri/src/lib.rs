@@ -166,7 +166,7 @@ async fn api_status(game: String, _api_url: Option<String>, _api_key: Option<Str
 
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
-        .user_agent("TCG-STREAM-TOOL/1.0.14")
+        .user_agent(concat!("TCG-STREAM-TOOL/", env!("CARGO_PKG_VERSION")))
         .build()
     {
         Ok(c) => c,
@@ -308,7 +308,7 @@ async fn scan_open_tcg(game: String, image_data_url: String) -> Result<Universal
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(22))
-        .user_agent("TCG-STREAM-TOOL/1.0.14")
+        .user_agent(concat!("TCG-STREAM-TOOL/", env!("CARGO_PKG_VERSION")))
         .build().map_err(|e| e.to_string())?;
 
     let scan = client.post("https://openapi.tcgtracking.com/v1/scan")
@@ -356,7 +356,7 @@ async fn search_card_universal(game: String, query: String, language: Option<Str
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(18))
-        .user_agent("TCG-STREAM-TOOL/1.0.14")
+        .user_agent(concat!("TCG-STREAM-TOOL/", env!("CARGO_PKG_VERSION")))
         .build().map_err(|e| e.to_string())?;
     let nq = norm(q);
 
@@ -469,7 +469,7 @@ fn naruto_match_score(html: &str, ocr: &str, code: &str) -> i32 {
 async fn search_naruto_online(reference: String, ocr_text: String) -> Result<CardResult, String> {
     let candidates=naruto_ref_candidates(&reference);
     if candidates.is_empty() { return Err("Référence Naruto illisible".into()); }
-    let client=reqwest::Client::builder().timeout(std::time::Duration::from_secs(12)).user_agent("TCG-STREAM-TOOL/1.0.14").build().map_err(|e|e.to_string())?;
+    let client=reqwest::Client::builder().timeout(std::time::Duration::from_secs(12)).user_agent(concat!("TCG-STREAM-TOOL/", env!("CARGO_PKG_VERSION"))).build().map_err(|e|e.to_string())?;
     let mut best: Option<(i32,CardResult)>=None;
     for code in candidates {
         let url=format!("https://www.narutomythos.com/fr/cards/{}",code);
@@ -497,7 +497,7 @@ async fn search_ygo_by_id(passcode: String) -> Result<CardResult, String> {
     let url = format!("https://db.ygoprodeck.com/api/v7/cardinfo.php?id={}", code);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.14")
+        .user_agent(concat!("TCG-STREAM-TOOL/", env!("CARGO_PKG_VERSION")))
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Passcode {} introuvable (HTTP {})", code, resp.status())); }
@@ -516,7 +516,7 @@ async fn search_vanguard_by_code(code: String) -> Result<CardResult, String> {
     );
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .user_agent("TCG-STREAM-TOOL/1.0.14")
+        .user_agent(concat!("TCG-STREAM-TOOL/", env!("CARGO_PKG_VERSION")))
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Vanguard HTTP {}", resp.status())); }
@@ -561,7 +561,7 @@ async fn search_ygo_card(query: String, language: Option<String>) -> Result<Card
     }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
-        .user_agent("TCG-STREAM-TOOL/1.0.14")
+        .user_agent(concat!("TCG-STREAM-TOOL/", env!("CARGO_PKG_VERSION")))
         .build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Carte introuvable (HTTP {})", resp.status())); }
@@ -573,7 +573,7 @@ async fn search_ygo_card(query: String, language: Option<String>) -> Result<Card
 #[tauri::command]
 async fn check_latest_release() -> Result<ReleaseCheck, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();
-    let client = reqwest::Client::builder().user_agent("TCG-STREAM-TOOL/1.0.14").build().map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder().user_agent(concat!("TCG-STREAM-TOOL/", env!("CARGO_PKG_VERSION"))).build().map_err(|e| e.to_string())?;
     let resp = client.get("https://api.github.com/repos/reddice-geek/tcg-stream-tool/releases/latest").send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("GitHub HTTP {}", resp.status())); }
     let json: Value = resp.json().await.map_err(|e| e.to_string())?;

@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { check as checkForAppUpdate } from '@tauri-apps/plugin-updater';
 import { createWorker } from 'tesseract.js';
 import narutoSet1 from './data/naruto-mythos-set1.json';
+import packageInfo from '../package.json';
+const APP_VERSION = packageInfo.version;
 
 const T = {
   fr: { sources:'SOURCES', overlays:'OVERLAYS', camera:'Caméra', api:'API CONNECTÉES', latency:'LATENCE', fps:'FPS', search:'Rechercher une carte Yu-Gi-Oh!', send:'Afficher sur le stream', hide:'Masquer', copy:'Copier le lien OBS', copied:'Lien copié', settings:'Réglages', update:'Mise à jour', current:'Version actuelle', latest:'Dernière version', noUpdate:'À jour', available:'Mise à jour disponible', refresh:'Actualiser', camOff:'Caméra désactivée', chooseCam:'Choisir la caméra', overlayUrl:'URL OVERLAY OBS', detection:'Reconnaissance visuelle', detectionOff:'Détection arrêtée', detectionOn:'Détection automatique active', detecting:'Analyse de la carte…', detected:'Carte détectée', startDetection:'Activer la détection', stopDetection:'Arrêter la détection', scanNow:'Scanner maintenant', detectionHelp:'Place la carte droite face à la caméra, assez proche, avec le nom bien visible.', onePiece:'API One Piece', save:'Enregistrer', autoOverlay:'Afficher automatiquement la carte détectée dans OBS' },
@@ -147,6 +149,9 @@ function extractVanguardCode(raw){
 
 export default function App(){
   const [lang,setLang] = useState(localStorage.getItem('tcg_lang') || 'fr');
+  const [skin,setSkin] = useState(localStorage.getItem('tcg_skin') || 'cyber');
+  useEffect(()=>{ localStorage.setItem('tcg_skin', skin); },[skin]);
+  useEffect(()=>{ document.title = `TCG STREAM TOOL v${APP_VERSION}`; },[]);
   const tr = T[lang] || T.fr;
   const [apis,setApis] = useState([]);
   const [overlayUrl,setOverlayUrl] = useState('');
@@ -928,18 +933,37 @@ export default function App(){
       const captured=captureCardImage();
 
       const allText=`${topRead.text}\n${bottomRead.text}\n${fullRead.text}`;
-      const found=parseUniversalCard(fullRead.text,topRead.text,bottomRead.text,captured);
+      let found=parseUniversalCard(fullRead.text,topRead.text,bottomRead.text,captured);
+      let visualMatch = false;
+      // Tentative d'identification visuelle dans la base distante du jeu sélectionné.
+      // En cas d'indisponibilité réseau/API, le scanner OCR local reste disponible.
+      if(selectedTcg !== 'naruto') {
+        try {
+          const apiImage = captureCardImageForApi();
+          const match = await invoke('scan_open_tcg', { game: selectedTcg, imageDataUrl: apiImage });
+          if(match?.card?.name && match.card.name !== 'Carte reconnue') {
+            found = { ...found, ...match.card, image_url: match.card.image_url || captured, source: 'Identification visuelle + base de cartes', detected_game: selectedTcg };
+            visualMatch = true;
+            const score = Number(match.score);
+            if(Number.isFinite(score) && score > 0) setScanConfidence(Math.max(0, Math.min(100, Math.round(score <= 1 ? score * 100 : score))));
+          }
+        } catch (apiError) {
+          console.info('Identification visuelle indisponible, bascule OCR locale :', apiError);
+        }
+      }
 
-      // Le scanner est 100 % local : aucune API, aucune base de cartes.
-      // On conserve uniquement ce qui est réellement lisible sur la carte.
+      // Le résultat distant n'est accepté que s'il contient un nom de carte ;
+      // sinon l'OCR local sert de solution de repli, sans inventer de fiche.
       const reference=extractUniversalReference(allText) || found.reference || '';
       const readName=pickCardName(topRead.text,fullRead.text);
 
-      if(readName && readName!=='Carte scannée') found.name=readName;
-      found.reference=reference;
-      found.image_url=captured;
-      found.source='Lecture caméra + OCR local';
-      found.description=cleanOcrDescription(fullRead.text, found.name, reference);
+      if(!visualMatch && readName && readName!=='Carte scannée') found.name=readName;
+      if(!visualMatch || reference) found.reference=reference || found.reference || '';
+      found.image_url=visualMatch ? (found.image_url || captured) : captured;
+      if(!visualMatch) {
+        found.source='Lecture caméra + OCR local';
+        found.description=cleanOcrDescription(fullRead.text, found.name, reference);
+      }
 
       // Refuse les scènes/écrans/objets lorsque l'OCR ne ressemble pas à une carte.
       const evidence=[
@@ -948,7 +972,7 @@ export default function App(){
         /\b(?:ATK|DEF|GRADE|BOOST|INTERCEPT|CRITICAL|POWER|MAIN|UPGRADE|ÉDITION|EDITION|MYTHOS|TCG|CARD|CARTE|MONSTER|UNIT|POK[EÉ]MON)\b/i.test(allText)
       ].filter(Boolean).length;
 
-      if(evidence<2){
+      if(!visualMatch && evidence<2){
         setLastOcr(`${confidence}% • aucune carte lisible`);
         autoCandidateRef.current={key:'',hits:0,at:0};
         if(!automatic) throw new Error('Aucune carte suffisamment lisible. Cadre uniquement la carte et rapproche-la.');
@@ -962,11 +986,11 @@ export default function App(){
         return;
       }
 
-      setScanConfidence(confidence);
+      if(!visualMatch) setScanConfidence(confidence);
       setCard(found);
       setQuery(found.reference || found.name);
-      setLastOcr(`${confidence}% • ${found.reference || '—'} • ${found.name}`);
-      setLastDetected(`${found.name}${found.reference?` • ${found.reference}`:''} • carte confirmée`);
+      setLastOcr(`${visualMatch ? 'Base visuelle' : `${confidence}% OCR`} • ${found.reference || found.id || '—'} • ${found.name}`);
+      setLastDetected(`${found.name}${found.reference?` • ${found.reference}`:found.id?` • ${found.id}`:''} • ${visualMatch ? 'base de cartes' : 'OCR confirmé'}`);
       setToast(`${tr.detected} : ${found.name}`);
       if(autoOverlay) await showCardOnOverlay(found);
     }catch(e){
@@ -1102,13 +1126,13 @@ export default function App(){
     </div>;
   }
 
-  return <div className="app">
+  return <div className={`app theme-${skin}`}>
     <header className="topbar">
-      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>THEMED EDITION • v1.0.17</span></div></div>
+      <div className="brand"><div className="logo">TCG</div><div><b>STREAM TOOL</b><span>NEON STUDIO • v{APP_VERSION}</span></div></div>
       <div className="header-update" title="Mises à jour de TCG STREAM TOOL">
         <div className="header-update-versions">
           <strong>MISE À JOUR</strong>
-          <span>Actuelle : <b>{release?.current || '1.0.14'}</b></span>
+          <span>Actuelle : <b>{release?.current || APP_VERSION}</b></span>
           <span>Dernière : <b>{nativeUpdate?.version || release?.latest || '—'}</b></span>
         </div>
         {(nativeUpdate || release?.update_available) ? (
@@ -1149,8 +1173,8 @@ export default function App(){
           <div className="source-row"><span><i className="dot ok"></i>OCR local</span><b>ACTIF</b></div>
           <div className="source-row"><span><i className="dot ok"></i>Capture de la carte</span><b>ACTIVE</b></div>
           <div className="source-row"><span><i className="dot ok"></i>Validation carte</span><b>ACTIVE</b></div>
-          <div className="source-row"><span><i className="dot ok"></i>API / base cartes</span><b>DÉSACTIVÉES</b></div>
-          <small className="source-local-note">Une vraie carte doit être détectée dans le cadre. L’OCR lit son nom/référence, puis affiche uniquement les informations réellement lues.</small>
+          <div className="source-row"><span><i className="dot ok"></i>Base visuelle / OCR</span><b>HYBRIDE</b></div>
+          <small className="source-local-note">Une vraie carte doit être détectée dans le cadre. La base visuelle est tentée en premier ; si elle échoue, l’OCR local prend le relais. Une correspondance peut dépendre du réseau et de la couverture du jeu.</small>
         </div>
       </section>
 
@@ -1206,8 +1230,9 @@ export default function App(){
       <label>Nom de streamer<input value={profile.streamer} onChange={e=>setProfile({...profile,streamer:e.target.value})}/></label>
       <label>Nom de chaîne<input value={profile.channel} onChange={e=>setProfile({...profile,channel:e.target.value})}/></label>
       <label>Plateforme<select value={profile.platform} onChange={e=>setProfile({...profile,platform:e.target.value})}><option value="twitch">Twitch</option><option value="youtube">YouTube</option><option value="tiktok">TikTok</option><option value="other">Autre</option></select></label>
+      <label>Thème visuel<select value={skin} onChange={e=>setSkin(e.target.value)}><option value="cyber">Cyber Neon</option><option value="obsidian">Obsidian Gold</option><option value="arcade">Arcade Violet</option><option value="forest">Emerald Stream</option></select></label>
       <label>TCG par défaut<select value={selectedTcg} onChange={e=>setSelectedTcg(e.target.value)}>{TCG_OPTIONS.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>
-      <p>Le scanner détecte la carte devant la caméra, lit son nom/référence puis utilise la base du TCG pour confirmer l’identification.</p>
+      <p>Le scanner tente une identification visuelle dans la base du jeu, puis utilise l’OCR local en secours. Le thème choisi est conservé sur cet ordinateur.</p>
       <div className="actions">
         <button className="primary" onClick={()=>{persistProfile(profile);saveSettings();}}>{tr.save}</button>
         <button className="ghost" onClick={()=>{setWizardStep(1);setWizardOpen(true);setSettingsOpen(false);}}>Assistant de profil</button>

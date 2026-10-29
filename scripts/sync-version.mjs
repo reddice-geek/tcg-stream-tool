@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import path from 'node:path';
+const root = process.cwd();
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const version = pkg.version;
+if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`Version invalide dans package.json: ${version}`);
+const tauriPath = path.join(root, 'src-tauri/tauri.conf.json');
+const tauri = JSON.parse(fs.readFileSync(tauriPath, 'utf8'));
+tauri.version = version;
+fs.writeFileSync(tauriPath, JSON.stringify(tauri, null, 2) + '\n');
+const cargoPath = path.join(root, 'src-tauri/Cargo.toml');
+let cargo = fs.readFileSync(cargoPath, 'utf8');
+cargo = cargo.replace(/^(version\s*=\s*)"[^"]+"/m, `$1"${version}"`);
+fs.writeFileSync(cargoPath, cargo);
+console.log(`Version synchronisée depuis package.json : ${version}`);

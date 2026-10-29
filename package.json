@@ -1,12 +1,13 @@
 {
   "name": "tcg-stream-tool",
   "private": true,
-  "version": "1.0.15",
+  "version": "2.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "tauri": "tauri"
+    "build": "npm run sync-version && vite build",
+    "tauri": "tauri",
+    "sync-version": "node scripts/sync-version.mjs"
   },
   "dependencies": {
     "react": "18.3.1",
