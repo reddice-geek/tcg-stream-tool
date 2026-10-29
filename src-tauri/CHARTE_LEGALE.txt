@@ -1,75 +1,82 @@
+CHARTE D’UTILISATION ET LICENCE UTILISATEUR FINAL (EULA)
+TCG STREAM TOOL
+Version 1.0.15 — 29 octobre 2026
+© 2026 Reddice Geek — Tous droits réservés pour les éléments appartenant à Reddice Geek.
 
-LICENCE UTILISATEUR FINAL (EULA) - TCG STREAM TOOL
-Version 1.0.5 - BUILD FIX - 13/09/2026
-© 2026 Reddice Geek - Tous droits réservés
+1. ÉDITEUR ET CONTACT
 
+TCG STREAM TOOL est développé et distribué gratuitement par Reddice Geek.
+Dépôt du projet : https://github.com/reddice-geek/tcg-stream-tool
+Contact : reddice.geek@gmail.com
 
-1. EDITEUR ET PROPRIETE
-Editeur: Reddice Geek (2026)
-GitHub: reddice-geek/tcg-stream-tool
-Email: reddice.geek@gmail.com
-Le logiciel TCG STREAM TOOL, son code source Rust/React, son design
-Space Grotesk + cyan #00E5FF, son logo TCG, ses thèmes (Duel Disk Or,
-Wanted, Pokédex), son overlay http://localhost:8765/overlay, sont la
-propriété exclusive de Reddice Geek. Dépôt APP/INPI 2026.
+2. OBJET DU LOGICIEL
 
-2. OBJET DE LA LICENCE
-Le présent contrat vous accorde un droit d'utilisation personnel,
-non exclusif, non transférable, pour le logiciel TCG STREAM TOOL
-permettant de streamer 12 TCGs : YGO, Pokémon, One Piece, Magic,
-Dragon Ball, Vanguard, Digimon, Lorcana, SWU, Riftbound, Naruto, Mythos.
+TCG STREAM TOOL est un outil destiné notamment aux streameurs et créateurs de contenu qui souhaitent présenter des cartes de jeux de cartes à collectionner (TCG) à l’écran. Selon les fonctionnalités et les catalogues pris en charge, il peut utiliser une caméra pour aider à reconnaître une carte et afficher des informations correspondantes.
 
-3. DROITS ACCORDES
-- Installer sur 3 PCs maximum vous appartenant
-- Utiliser l'overlay dans OBS / Streamlabs / XSplit via localhost:8765
-- Détection de cartes via flux caméra
-- Mode discret + enregistrement 720p/1080p/4K/8K
-- Usage streaming perso OU commercial (Twitch/YouTube) autorisé
-- Mises à jour gratuites via GitHub Releases
+Le projet vise notamment des jeux tels que Naruto Mythos, Magic: The Gathering, Yu-Gi-Oh!, Pokémon, One Piece, Dragon Ball, Digimon, Lorcana et d’autres TCG compatibles. La prise en charge de chaque jeu dépend de la version du logiciel et des sources de données disponibles.
 
-4. INTERDICTIONS - SOUS PEINE DE POURSUITES
-Il est STRICTEMENT INTERDIT de :
-a) Copier, cloner, dupliquer le logiciel ou l'exe
-b) Partager l'exe, le .deb, l'AppImage, le code sur Discord/Drive/Torrent
-c) Décompiler, reverse-engineer, extraire le code Rust/React
-d) Modifier, cracker la charte légale du NSIS
-e) Revendre, louer, monnayer l'accès
-f) Utiliser "TCG STREAM TOOL", "Reddice Geek", logo TCG cyan sans autorisation
-g) Supprimer le copyright © 2026 Reddice Geek
+3. GRATUITÉ ET USAGE AUTORISÉ
 
-5. SANCTIONS - Art. L335-2 à L335-10 CPI
-Toute violation = délit de contrefaçon :
-- 3 ans d'emprisonnement
-- 300 000€ d'amende
-- Dommages-intérêts
-- Blocage à distance des versions crackées
-- Poursuite Tribunal Judiciaire Paris
-- Signalement DMCA GitHub
+Le logiciel est fourni gratuitement. Aucun achat n’est requis pour le télécharger ou l’utiliser.
 
-6. DONNEES - RGPD
-Aucune collecte. Le logiciel tourne en local uniquement.
-Aucun tracking, aucun cookie. Requêtes APIs TCG directes depuis votre PC.
-Conforme RGPD.
+En acceptant cette charte, l’utilisateur reçoit un droit personnel, non exclusif et non transférable d’installer et d’utiliser TCG STREAM TOOL pour des activités privées, de loisir, de test ou de création de contenu non rémunérées.
 
-7. GARANTIE BETA
-Logiciel fourni "en l'état" en BETA v1.0.5. Aucune garantie de fonctionnement
-parfait. Reddice Geek non responsable de crash OBS, perte de stream, etc.
-Support via GitHub Issues uniquement.
+Sauf autorisation écrite préalable de Reddice Geek, sont exclus de cette autorisation :
+- l’utilisation du logiciel dans le cadre d’une prestation rémunérée ou d’une activité commerciale ;
+- la vente, la location ou la revente du logiciel, de l’installateur ou d’un accès à ses fonctionnalités ;
+- l’intégration du logiciel dans une offre payante ou un produit commercial.
 
-8. MISES A JOUR
-Chaque tag v* déclenche build auto via GitHub Actions.
-La présente licence s'applique à toutes versions futures.
+La diffusion d’un stream ou d’une vidéo qui génère des revenus, bénéficie de sponsors, de dons, d’abonnements payants ou d’une autre forme de rémunération ne constitue pas un usage non rémunéré. Si vous souhaitez utiliser le logiciel dans ce cadre, demandez d’abord une autorisation écrite à Reddice Geek.
 
-9. RESILIATION
-Non-respect = résiliation immédiate + désinstallation obligatoire + poursuites.
+4. PROPRIÉTÉ INTELLECTUELLE ET REDISTRIBUTION
+
+Le code, les éléments graphiques, le nom et le logo propres à TCG STREAM TOOL restent soumis aux droits applicables et aux licences des composants utilisés. Les droits sur les éléments appartenant à Reddice Geek sont réservés.
+
+Sauf autorisation écrite ou licence applicable qui l’autorise, vous ne devez pas :
+- revendre le logiciel ou le présenter comme votre propre création ;
+- redistribuer une version modifiée ou republiée de l’installateur en la présentant comme une version officielle ;
+- supprimer les mentions de droits ou induire les utilisateurs en erreur sur l’origine du logiciel ;
+- utiliser le nom ou le logo de Reddice Geek pour laisser croire à une approbation ou à un partenariat inexistant.
+
+Le code source publié sur GitHub peut être soumis à une licence distincte si un fichier de licence est présent dans le dépôt. En cas de différence, les conditions de cette licence s’appliquent au code qu’elle couvre.
+
+5. MARQUES ET CONTENUS DES JEUX TCG
+
+Les noms de jeux, marques, logos, illustrations et visuels de cartes cités ou affichés par le logiciel appartiennent à leurs titulaires respectifs. Leur mention sert à identifier les jeux et les cartes pris en charge.
+
+TCG STREAM TOOL et Reddice Geek ne prétendent pas être affiliés, approuvés ou sponsorisés par les éditeurs des jeux cités, sauf indication explicite contraire. L’utilisateur reste responsable du respect des conditions d’utilisation des services tiers et des droits associés aux contenus qu’il diffuse.
+
+6. FONCTIONNEMENT, DONNÉES ET SERVICES TIERS
+
+Les résultats de reconnaissance sont fournis à titre d’aide et peuvent être incomplets ou incorrects. La qualité dépend notamment de l’éclairage, de la mise au point, de l’angle de la caméra, de l’état de la carte et des catalogues accessibles.
+
+Selon la fonctionnalité utilisée, le logiciel peut effectuer des requêtes vers des API ou des catalogues tiers pour rechercher des informations de cartes. Le scan manuel peut transmettre une image à un service distant de reconnaissance visuelle ; le scan automatique est conçu pour rester local. L’utilisation d’un service distant est soumise aux conditions et à la politique de confidentialité de ce service.
+
+N’envoyez pas d’image contenant des informations personnelles ou confidentielles. Consultez la documentation du projet pour connaître les services externes effectivement utilisés dans la version installée. Reddice Geek ne peut pas garantir la disponibilité, l’exactitude ou la pérennité des services tiers.
+
+7. ABSENCE DE GARANTIE ET LIMITATION DE RESPONSABILITÉ
+
+Le logiciel est fourni gratuitement « en l’état », dans la limite autorisée par la loi. Aucune garantie n’est donnée quant à l’absence d’erreurs, à la disponibilité permanente, à la compatibilité avec tous les matériels ou à l’exactitude de chaque résultat de reconnaissance.
+
+Dans la limite autorisée par la loi, Reddice Geek ne peut être tenu responsable des dommages indirects, interruptions de diffusion, pertes de données, erreurs d’identification ou problèmes provenant de services tiers. Cette clause ne limite pas les droits ou responsabilités qui ne peuvent légalement être exclus.
+
+L’utilisateur est invité à tester le logiciel avant une diffusion importante et à conserver ses propres sauvegardes et solutions de secours.
+
+8. MISES À JOUR ET FIN D’UTILISATION
+
+Des mises à jour peuvent être publiées sur GitHub. Elles ne sont pas garanties à une fréquence déterminée et peuvent modifier les fonctionnalités, les exigences techniques ou les services utilisés.
+
+Vous pouvez cesser d’utiliser le logiciel à tout moment et le désinstaller. En cas de violation des présentes conditions, l’autorisation d’utilisation peut être suspendue ou prendre fin, sous réserve des règles légales applicables.
+
+9. ACCEPTATION
+
+En cochant la case d’acceptation dans l’installateur et en poursuivant l’installation, vous confirmez avoir lu et accepté cette charte.
+
+Si vous n’acceptez pas ces conditions, n’installez pas et n’utilisez pas le logiciel.
 
 10. DROIT APPLICABLE
-Droit français. Tribunal compétent : Paris.
 
-ACCEPTATION DANS L'EXE
-En cochant "J'accepte la charte © 2026 Reddice Geek - Reproduction interdite
-sous peine de poursuites légales" dans l'installeur
-TCG-STREAM-TOOL_1.0.5_x64-setup.exe, vous acceptez l'intégralité de cette licence.
+La présente charte est soumise au droit français, sous réserve des règles impératives applicables à l’utilisateur. Tout différend sera traité par les juridictions compétentes déterminées selon les règles de droit applicables.
 
-Date d'effet : 13/09/2026
-© 2026 Reddice Geek - Tous droits réservés
+Dernière mise à jour : 29 octobre 2026
+© 2026 Reddice Geek
