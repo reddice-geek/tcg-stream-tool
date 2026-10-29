@@ -2,30 +2,26 @@
 
 Application Windows TCG STREAM TOOL par **Reddice Geek**.
 
-## Télécharger l'application
+## Génération automatique du `.exe`
 
-1. Ouvrez l'onglet **Releases** du dépôt GitHub.
-2. Ouvrez la dernière version.
-3. Dans **Assets**, téléchargez le fichier d'installation **`.exe`**.
-4. Lancez l'installateur Windows.
+GitHub Actions compile l'application automatiquement :
 
-Les utilisateurs n'ont pas besoin d'installer Node.js, Rust, Tauri ou Git.
-
-## Publier une nouvelle version
-
-La version de l'application est définie dans :
-
-- `package.json`
-- `src-tauri/tauri.conf.json`
-- `src-tauri/Cargo.toml`
-
-Après avoir changé le numéro de version, créez et poussez un tag Git :
+- à chaque push sur `main` ou `master` : ouvrez **Actions**, puis le workflow **Build Windows EXE** et téléchargez l'artefact `TCG-STREAM-TOOL-Windows-EXE` ;
+- pour publier une version dans **Releases** : mettez à jour les numéros de version dans `package.json`, `src-tauri/tauri.conf.json` et `src-tauri/Cargo.toml`, créez un tag (par exemple `v1.0.15`) et poussez-le :
 
 ```bash
-git tag v1.0.6
-git push origin v1.0.6
+git tag v1.0.15
+git push origin v1.0.15
 ```
 
-Le workflow GitHub Actions **Build Windows EXE** compile alors automatiquement l'application et ajoute l'installateur `.exe` à une Release GitHub publique.
+Le workflow compile alors l'installateur Windows `.exe` et le joint à la Release GitHub. Il n'exige pas de secret de signature Tauri pour compiler l'installateur.
 
-Le workflow peut aussi être lancé manuellement depuis **Actions > Build Windows EXE > Run workflow**.
+## Détection des cartes
+
+Le scan manuel tente d'abord la reconnaissance visuelle à partir du catalogue distant pris en charge. Si le service échoue ou ne renvoie pas de résultat suffisamment exploitable, le scanner revient à l'OCR local. La qualité dépend notamment de l'éclairage, de l'angle, de la mise au point et de la carte choisie. Le scan automatique reste local pour éviter d'envoyer une image à un service distant à chaque cycle.
+
+## Avertissement Microsoft Defender SmartScreen
+
+Le build automatique ne rend pas automatiquement l'éditeur « reconnu ». Tant que le fichier `.exe` n'est pas signé avec un certificat de signature de code reconnu, Windows peut afficher « Windows a protégé votre ordinateur » ou « éditeur inconnu ». Pour faire disparaître durablement cet avertissement, il faut signer l'application avec un certificat adapté et protéger la clé de signature dans les secrets GitHub. Ne désactivez pas Defender pour installer une application dont la provenance n'est pas vérifiée.
+
+Les utilisateurs n'ont pas besoin d'installer Node.js, Rust, Tauri ou Git.
